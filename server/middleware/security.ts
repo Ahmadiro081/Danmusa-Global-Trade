@@ -1,0 +1,280 @@
+import type { NextFunction, Request, Response } from 'express';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { ZodType } from 'zod';
+import { getIntegrationReadiness } from '../config/env.ts';
+import { getSupabaseAdmin } from '../services/supabaseAdmin.ts';
+
+export type DgtRoleSlug =
+  | 'super_admin'
+  | 'admin'
+  | 'product_manager'
+  | 'order_manager'
+  | 'finance_manager'
+  | 'sourcing_manager'
+  | 'logistics_manager'
+  | 'customer_support'
+  | 'registered_customer'
+  | 'guest_customer';
+
+export const STAFF_ROLE_SLUGS: readonly DgtRoleSlug[] = [
+  'super_admin',
+  'admin',
+  'product_manager',
+  'order_manager',
+  'finance_manager',
+  'sourcing_manager',
+  'logistics_manager',
+  'customer_support',
+] as const;
+
+export interface VerifiedAuthContext {
+  user: Pick<User, 'id' | 'email'>;
+  role: DgtRoleSlug;
+  staffAccountId: string | null;
+}
+
+export interface AuthResolver {
+  resolveSession: (token: string) => Promise<
+    | { ok: true; context: VerifiedAuthContext }
+    | { ok: false; status: 401 | 403 | 500 | 503; code: string; error: string }
+  >;
+  getAdminClient: () => SupabaseClient | null;
+}
+
+const SENSITIVE_KEY_PATTERN =
+  /password|secret|token|api_?key|authorization|cookie|service_role/i;
+
+export function sanitizeAuditSnapshot(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_KEY_PATTERN.test(k)) {
+      clean[k] = '[REDACTED]';
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+      clean[k] = sanitizeAuditSnapshot(v);
+    } else {
+      clean[k] = v;
+    }
+  }
+  return clean;
+}
+
+export function createSupabaseAuthResolver(
+  getClient: () => SupabaseClient | null,
+): AuthResolver {
+  return {
+    getAdminClient: getClient,
+    async resolveSession(token: string) {
+      const supabaseAdmin = getClient();
+
+      if (!supabaseAdmin) {
+        return {
+          ok: false,
+          status: 503,
+          code: 'SUPABASE_NOT_CONFIGURED',
+          error:
+            'Protected administrative and customer endpoints fail closed until Supabase Auth and PostgreSQL credentials are configured.',
+        };
+      }
+
+      const { data: userData, error: userError } =
+        await supabaseAdmin.auth.getUser(token);
+
+      if (userError || !userData.user) {
+        return {
+          ok: false,
+          status: 401,
+          code: 'INVALID_SESSION',
+          error: 'Invalid or expired session token',
+        };
+      }
+
+      const { data: profileRow, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id, account_type')
+        .eq('id', userData.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        return {
+          ok: false,
+          status: 500,
+          code: 'PROFILE_LOOKUP_ERROR',
+          error: 'Authorization profile check failed',
+        };
+      }
+
+      const { data: staffRow, error: staffError } = await supabaseAdmin
+        .from('staff_accounts')
+        .select('id, is_active, roles(slug)')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+
+      if (staffError) {
+        return {
+          ok: false,
+          status: 500,
+          code: 'RBAC_LOOKUP_ERROR',
+          error: 'Authorization check failed',
+        };
+      }
+
+      const roleRelation = staffRow?.roles as unknown as { slug?: DgtRoleSlug } | null;
+
+      // Active staff requires BOTH staff_accounts.is_active === true AND profile.account_type === 'staff'.
+      const isVerifiedActiveStaff =
+        Boolean(staffRow?.is_active) &&
+        profileRow?.account_type === 'staff' &&
+        Boolean(roleRelation?.slug) &&
+        STAFF_ROLE_SLUGS.includes(roleRelation!.slug!);
+
+      const resolvedRole: DgtRoleSlug = isVerifiedActiveStaff
+        ? roleRelation!.slug!
+        : 'registered_customer';
+
+      return {
+        ok: true,
+        context: {
+          user: { id: userData.user.id, email: userData.user.email },
+          role: resolvedRole,
+          staffAccountId: isVerifiedActiveStaff ? (staffRow?.id ?? null) : null,
+        },
+      };
+    },
+  };
+}
+
+export const defaultAuthResolver: AuthResolver = createSupabaseAuthResolver(() => {
+  const readiness = getIntegrationReadiness();
+  return readiness.supabaseAdmin ? getSupabaseAdmin() : null;
+});
+
+export function applySecurityHeaders(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+}
+
+export function validateBody<T>(schema: ZodType<T>) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: parsed.error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      });
+      return;
+    }
+    req.body = parsed.data;
+    next();
+  };
+}
+
+/**
+ * Fail-closed authentication & RBAC guard for protected endpoints.
+ * Never trusts client-supplied role headers or bypasses unconfigured Supabase Auth.
+ */
+export function requireVerifiedRole(
+  allowedRoles: readonly DgtRoleSlug[],
+  authResolver: AuthResolver = defaultAuthResolver,
+) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // If Supabase itself is unconfigured, still report 503 when no token or unconfigured backend
+      if (!authResolver.getAdminClient()) {
+        res.status(503).json({
+          error: 'Authentication service not yet configured',
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message:
+            'Protected administrative and customer endpoints fail closed until Supabase Auth and PostgreSQL credentials are configured.',
+        });
+        return;
+      }
+      res.status(401).json({
+        error: 'Unauthorized',
+        code: 'MISSING_BEARER_TOKEN',
+      });
+      return;
+    }
+
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (!token) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        code: 'EMPTY_BEARER_TOKEN',
+      });
+      return;
+    }
+
+    const result = await authResolver.resolveSession(token);
+    if (!result.ok) {
+      res.status(result.status).json({
+        error: result.error,
+        code: result.code,
+      });
+      return;
+    }
+
+    if (!allowedRoles.includes(result.context.role)) {
+      res.status(403).json({
+        error: 'Forbidden: insufficient permissions',
+        code: 'INSUFFICIENT_ROLE',
+      });
+      return;
+    }
+
+    res.locals.authUser = result.context.user;
+    res.locals.authRole = result.context.role;
+    res.locals.staffAccountId = result.context.staffAccountId;
+    next();
+  };
+}
+
+export function requireDatabaseClient(
+  authResolver: AuthResolver = defaultAuthResolver,
+) {
+  return (_req: Request, res: Response, next: NextFunction): void => {
+    const client = authResolver.getAdminClient();
+    if (!client) {
+      res.status(503).json({
+        error: 'Database service not yet configured',
+        code: 'SUPABASE_NOT_CONFIGURED',
+      });
+      return;
+    }
+    res.locals.supabaseAdmin = client;
+    next();
+  };
+}
+
+export function apiErrorHandler(
+  err: Error,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  console.error('[DGT API Error]', err.message);
+  res.status(500).json({
+    error: 'Internal server error',
+    code: 'INTERNAL_ERROR',
+  });
+}

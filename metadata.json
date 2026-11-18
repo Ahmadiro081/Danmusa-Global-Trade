@@ -1,0 +1,6 @@
+{
+  "name": "Danmusa Global Trade (DGT)",
+  "description": "Your Trusted China-to-Nigeria Trade Partner. International trade, ready-stock e-commerce, wholesale sourcing, and logistics management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
