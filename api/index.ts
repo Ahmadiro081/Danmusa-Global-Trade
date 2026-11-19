@@ -10,23 +10,38 @@ const app = createDgtApiApp();
  * Forwards incoming HTTP requests to the shared Express application and
  * resolves when the response stream finishes or closes.
  */
-export default function handler(
+export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  return new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     let settled = false;
-    const done = () => {
+    const cleanup = () => {
+      res.removeListener('finish', onDone);
+      res.removeListener('close', onDone);
+      res.removeListener('error', onError);
+    };
+    const onDone = () => {
       if (settled) return;
       settled = true;
-      res.removeListener('finish', done);
-      res.removeListener('close', done);
+      cleanup();
       resolve();
     };
+    const onError = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
 
-    res.once('finish', done);
-    res.once('close', done);
+    res.once('finish', onDone);
+    res.once('close', onDone);
+    res.once('error', onError);
 
-    app(req, res);
+    try {
+      app(req, res);
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
   });
 }
