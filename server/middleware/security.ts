@@ -100,11 +100,12 @@ export function createSupabaseAuthResolver(
         .maybeSingle();
 
       if (profileError) {
+        const classified = classifySupabaseError(profileError, 'Authorization profile check failed');
         return {
           ok: false,
-          status: 500,
-          code: 'PROFILE_LOOKUP_ERROR',
-          error: 'Authorization profile check failed',
+          status: classified.status,
+          code: classified.code,
+          error: classified.error,
         };
       }
 
@@ -115,11 +116,12 @@ export function createSupabaseAuthResolver(
         .maybeSingle();
 
       if (staffError) {
+        const classified = classifySupabaseError(staffError, 'Authorization check failed');
         return {
           ok: false,
-          status: 500,
-          code: 'RBAC_LOOKUP_ERROR',
-          error: 'Authorization check failed',
+          status: classified.status,
+          code: classified.code,
+          error: classified.error,
         };
       }
 
@@ -264,6 +266,57 @@ export function requireDatabaseClient(
     res.locals.supabaseAdmin = client;
     next();
   };
+}
+
+export function classifySupabaseError(
+  err: { code?: string; message?: string } | null | undefined,
+  fallbackMessage: string,
+): { status: 500 | 503; code: string; error: string } {
+  const code = err?.code ?? '';
+  const message = err?.message ?? '';
+
+  if (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    /schema cache|does not exist/i.test(message)
+  ) {
+    return {
+      status: 503,
+      code: 'DATABASE_NOT_INITIALIZED',
+      error:
+        'Database schema is not initialized yet. Apply the Supabase SQL migrations first.',
+    };
+  }
+
+  if (
+    /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|Invalid API key/i.test(
+      message,
+    )
+  ) {
+    return {
+      status: 503,
+      code: 'DATABASE_UNAVAILABLE',
+      error: 'Database service is unavailable or unreachable.',
+    };
+  }
+
+  return {
+    status: 500,
+    code: 'DATABASE_QUERY_ERROR',
+    error: fallbackMessage,
+  };
+}
+
+export function sendDatabaseError(
+  res: Response,
+  err: { code?: string; message?: string } | null | undefined,
+  fallbackMessage: string,
+): void {
+  const classified = classifySupabaseError(err, fallbackMessage);
+  res.status(classified.status).json({
+    error: classified.error,
+    code: classified.code,
+  });
 }
 
 export function apiErrorHandler(

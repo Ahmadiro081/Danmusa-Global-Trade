@@ -19,7 +19,11 @@ async function parseJsonSafe<T>(response: Response): Promise<T> {
   if (!text) {
     throw new Error(`Empty response (HTTP ${response.status})`);
   }
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Invalid JSON response (HTTP ${response.status})`);
+  }
 }
 
 export async function fetchPlatformHealth(): Promise<HealthResponse> {

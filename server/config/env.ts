@@ -8,6 +8,24 @@ export interface IntegrationReadiness {
   whatsapp: boolean;
 }
 
+function isValidHttpUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('MY_')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function isConfiguredValue(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !trimmed.startsWith('MY_');
+}
+
 export const serverEnv = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3000),
@@ -24,17 +42,19 @@ export const serverEnv = {
 };
 
 export function getIntegrationReadiness(): IntegrationReadiness {
+  const validSupabaseUrl = isValidHttpUrl(serverEnv.supabaseUrl);
   return {
-    supabaseClient: Boolean(serverEnv.supabaseUrl && serverEnv.supabaseAnonKey),
-    supabaseAdmin: Boolean(serverEnv.supabaseUrl && serverEnv.supabaseServiceRoleKey),
-    cloudinary: Boolean(
-      serverEnv.cloudinaryCloudName &&
-        serverEnv.cloudinaryApiKey &&
-        serverEnv.cloudinaryApiSecret,
-    ),
-    resend: Boolean(serverEnv.resendApiKey),
-    whatsapp: Boolean(
-      serverEnv.whatsappBusinessToken && serverEnv.whatsappPhoneNumberId,
-    ),
+    supabaseClient:
+      validSupabaseUrl && isConfiguredValue(serverEnv.supabaseAnonKey),
+    supabaseAdmin:
+      validSupabaseUrl && isConfiguredValue(serverEnv.supabaseServiceRoleKey),
+    cloudinary:
+      isConfiguredValue(serverEnv.cloudinaryCloudName) &&
+      isConfiguredValue(serverEnv.cloudinaryApiKey) &&
+      isConfiguredValue(serverEnv.cloudinaryApiSecret),
+    resend: isConfiguredValue(serverEnv.resendApiKey),
+    whatsapp:
+      isConfiguredValue(serverEnv.whatsappBusinessToken) &&
+      isConfiguredValue(serverEnv.whatsappPhoneNumberId),
   };
 }

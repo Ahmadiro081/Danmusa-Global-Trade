@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   defaultAuthResolver,
   requireDatabaseClient,
+  sendDatabaseError,
   type AuthResolver,
 } from '../middleware/security.ts';
 
@@ -20,7 +21,7 @@ export function createCatalogueRouter(
       .order('sort_order', { ascending: true });
 
     if (error) {
-      res.status(500).json({ error: 'Failed to load categories' });
+      sendDatabaseError(res, error, 'Failed to load categories');
       return;
     }
     res.json({ categories: data ?? [] });
@@ -54,7 +55,7 @@ export function createCatalogueRouter(
 
     const { data, error } = await query.order('is_featured', { ascending: false });
     if (error) {
-      res.status(500).json({ error: 'Failed to load products' });
+      sendDatabaseError(res, error, 'Failed to load products');
       return;
     }
     res.json({ products: data ?? [] });
@@ -72,7 +73,7 @@ export function createCatalogueRouter(
       .maybeSingle();
 
     if (error) {
-      res.status(500).json({ error: 'Failed to load product details' });
+      sendDatabaseError(res, error, 'Failed to load product details');
       return;
     }
     if (!data) {
@@ -93,7 +94,7 @@ export function createCatalogueRouter(
       .order('name', { ascending: true });
 
     if (error) {
-      res.status(500).json({ error: 'Failed to load Nigerian states' });
+      sendDatabaseError(res, error, 'Failed to load Nigerian states');
       return;
     }
     res.json({ states: data ?? [] });
