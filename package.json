@@ -9,10 +9,9 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build": "vite build && npm run build:api",
-    "build:api": "esbuild server/vercel.ts --bundle --platform=node --target=node22 --format=esm --packages=external --banner:js=\"// Generated from server/vercel.ts by esbuild; do not edit directly.\" --outfile=api/index.mjs",
+    "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js api/index.mjs",
+    "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

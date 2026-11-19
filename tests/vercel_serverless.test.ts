@@ -4,13 +4,15 @@ import http from 'node:http';
 import path from 'node:path';
 import test from 'node:test';
 
-async function invokeServerlessBundle(
-  handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+async function invokeServerlessHandler(
+  handler: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> | void,
   method: string,
   urlPath: string,
   options?: { headers?: Record<string, string>; body?: unknown },
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; json: Record<string, unknown> }> {
-  const server = http.createServer(handler);
+  const server = http.createServer((req, res) => {
+    void handler(req, res);
+  });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as { port: number };
 
@@ -36,32 +38,33 @@ async function invokeServerlessBundle(
   }
 }
 
-test('Compiled Vercel serverless bundle (api/index.mjs) contains no Vite or app.listen calls', () => {
+test('api/index.ts exists cleanly without conflicting api/index.mjs, Vite imports, or listen() calls', () => {
+  const apiEntryPath = path.resolve('api/index.ts');
+  assert.equal(fs.existsSync(apiEntryPath), true, 'Expected api/index.ts to exist');
+  assert.equal(
+    fs.existsSync(path.resolve('api/index.mjs')),
+    false,
+    'api/index.mjs must not coexist with api/index.ts in api/',
+  );
+
   const stripComments = (src: string) =>
     src.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
-  const vercelSource = stripComments(
-    fs.readFileSync(path.resolve('server/vercel.ts'), 'utf8'),
-  );
-  assert.doesNotMatch(vercelSource, /from\s+['"]vite['"]/);
-  assert.doesNotMatch(vercelSource, /\.listen\s*\(/);
-
-  const bundlePath = path.resolve('api/index.mjs');
-  assert.equal(fs.existsSync(bundlePath), true, 'Expected api/index.mjs to be built');
-  const bundleCode = stripComments(fs.readFileSync(bundlePath, 'utf8'));
-  assert.doesNotMatch(bundleCode, /createViteServer/);
-  assert.doesNotMatch(bundleCode, /\.listen\s*\(/);
+  const source = stripComments(fs.readFileSync(apiEntryPath, 'utf8'));
+  assert.doesNotMatch(source, /from\s+['"]vite['"]/);
+  assert.doesNotMatch(source, /\.listen\s*\(/);
+  assert.match(source, /createDgtApiApp/);
 });
 
-test('Compiled Vercel serverless bundle handles health, config, catalogue, nested API paths, and methods', async () => {
-  const bundleUrl = new URL('../api/index.mjs', import.meta.url).href;
-  const mod = (await import(bundleUrl)) as {
-    default: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+test('api/index.ts serverless handler handles health, config, catalogue, nested API paths, and methods', async () => {
+  const entryUrl = new URL('../api/index.ts', import.meta.url).href;
+  const mod = (await import(entryUrl)) as {
+    default: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>;
   };
   assert.equal(typeof mod.default, 'function');
 
   // 1. Public Health endpoint
-  const health = await invokeServerlessBundle(mod.default, 'GET', '/api/health');
+  const health = await invokeServerlessHandler(mod.default, 'GET', '/api/health');
   assert.equal(health.status, 200);
   assert.equal(health.json.status, 'operational');
   assert.equal(health.json.paymentStrategy, 'bank_transfer_only');
@@ -70,7 +73,7 @@ test('Compiled Vercel serverless bundle handles health, config, catalogue, neste
   assert.equal(health.headers['x-frame-options'], 'SAMEORIGIN');
 
   // 2. Public Config endpoint
-  const pubConfig = await invokeServerlessBundle(mod.default, 'GET', '/api/config/public');
+  const pubConfig = await invokeServerlessHandler(mod.default, 'GET', '/api/config/public');
   assert.equal(pubConfig.status, 200);
   assert.equal(pubConfig.json.abbreviation, 'DGT');
   assert.equal(pubConfig.json.paymentStrategy, 'bank_transfer_only');
@@ -78,13 +81,13 @@ test('Compiled Vercel serverless bundle handles health, config, catalogue, neste
 
   // 3. Catalogue & query parameter routing reach Express handlers (503 fail-closed when Supabase unconfigured in test env)
   for (const route of ['/api/products?mode=ready_stock', '/api/categories', '/api/states']) {
-    const res = await invokeServerlessBundle(mod.default, 'GET', route);
+    const res = await invokeServerlessHandler(mod.default, 'GET', route);
     assert.equal(res.status, 503);
     assert.equal(res.json.code, 'SUPABASE_NOT_CONFIGURED');
   }
 
   // 4. Nested admin & customer endpoints across GET/POST/PATCH/DELETE reach Express guards (never SPA 404)
-  const adminProbe = await invokeServerlessBundle(
+  const adminProbe = await invokeServerlessHandler(
     mod.default,
     'GET',
     '/api/admin/foundation-status',
@@ -97,13 +100,13 @@ test('Compiled Vercel serverless bundle handles health, config, catalogue, neste
     ['PATCH', '/api/customer/profile', { fullName: 'Test User' }],
     ['DELETE', '/api/customer/addresses/11111111-1111-4111-8111-111111111111', undefined],
   ] as const) {
-    const res = await invokeServerlessBundle(mod.default, method, endpoint, { body });
+    const res = await invokeServerlessHandler(mod.default, method, endpoint, { body });
     assert.equal(res.status, 503);
     assert.equal(res.json.code, 'SUPABASE_NOT_CONFIGURED');
   }
 
   // 5. Unknown API endpoint returns structured JSON 404
-  const unknown = await invokeServerlessBundle(mod.default, 'GET', '/api/does-not-exist');
+  const unknown = await invokeServerlessHandler(mod.default, 'GET', '/api/does-not-exist');
   assert.equal(unknown.status, 404);
   assert.equal(unknown.json.error, 'API endpoint not found');
 });
@@ -134,7 +137,6 @@ test('vercel.json routes /api/* to serverless Express before SPA fallback and su
   assert.ok(apiWildcardIdx >= 0, 'Missing /api/:path* rewrite');
   assert.ok(spaFallbackIdx > apiWildcardIdx, 'SPA fallback must come after API rewrites');
 
-  // Verify SPA fallback negative lookahead never matches /api/* routes, while matching all React Router paths
   const spaRule = config.rewrites[spaFallbackIdx]!;
   assert.equal(spaRule.source, '/((?!api/).*)');
   const spaRegex = new RegExp(`^${spaRule.source}$`);
