@@ -81,7 +81,12 @@ export function getSafeNextPath(nextParam: string | null | undefined): string | 
   if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
     return null;
   }
-  if (trimmed.startsWith('/login') || trimmed.startsWith('/register')) {
+  if (
+    trimmed.startsWith('/login') ||
+    trimmed.startsWith('/register') ||
+    trimmed.startsWith('/forgot-password') ||
+    trimmed.startsWith('/reset-password')
+  ) {
     return null;
   }
   return trimmed;

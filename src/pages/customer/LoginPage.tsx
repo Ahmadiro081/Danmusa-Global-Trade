@@ -12,6 +12,10 @@ import {
 } from '../../components/ui/StateViews';
 import { useAuth } from '../../context/AuthContext';
 import {
+  ApiRequestError,
+  requestPasswordReset,
+} from '../../services/apiClient';
+import {
   getSupabaseClient,
   isSupabaseClientConfigured,
 } from '../../services/supabaseClient';
@@ -176,29 +180,40 @@ export function LoginPage() {
     }
     setErrors({});
 
-    const client = getSupabaseClient();
-    if (!client) {
-      setAuthError('Supabase Auth is not configured in this environment.');
-      return;
-    }
-
+    const redirectTo = `${window.location.origin}/reset-password`;
     setSubmitting(true);
-    const { error } = await client.auth.resetPasswordForEmail(
-      parsed.data.email,
-      {
-        redirectTo: `${window.location.origin}/login?mode=recovery`,
-      },
-    );
-    setSubmitting(false);
-
-    if (error) {
-      setAuthError(error.message);
-      return;
+    try {
+      const response = await requestPasswordReset(parsed.data.email, redirectTo);
+      setStatusMessage(response.message);
+    } catch (err) {
+      if (
+        err instanceof ApiRequestError &&
+        (err.code === 'RESEND_NOT_CONFIGURED' || err.status === 503)
+      ) {
+        const client = getSupabaseClient();
+        if (client) {
+          const { error } = await client.auth.resetPasswordForEmail(
+            parsed.data.email,
+            { redirectTo },
+          );
+          if (!error) {
+            setStatusMessage(
+              'If an account exists for that email address, a password recovery link has been dispatched.',
+            );
+            return;
+          }
+          setAuthError(error.message);
+          return;
+        }
+      }
+      setAuthError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to send password reset link right now.',
+      );
+    } finally {
+      setSubmitting(false);
     }
-
-    setStatusMessage(
-      'If an account exists for that email address, a Supabase password recovery link has been dispatched.',
-    );
   };
 
   const handlePasswordUpdate = async (event: FormEvent) => {
@@ -328,18 +343,12 @@ export function LoginPage() {
               />
 
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthError(null);
-                    setStatusMessage(null);
-                    setErrors({});
-                    setMode('forgot');
-                  }}
-                  className="text-xs font-semibold text-[#2563EB] hover:underline cursor-pointer"
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-semibold text-[#2563EB] hover:underline"
                 >
                   Forgot password?
-                </button>
+                </Link>
               </div>
 
               <Button

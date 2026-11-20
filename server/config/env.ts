@@ -26,6 +26,9 @@ function isConfiguredValue(value: string): boolean {
   return trimmed.length > 0 && !trimmed.startsWith('MY_');
 }
 
+export const DEFAULT_RESEND_FROM_EMAIL =
+  'Danmusa Global Trade <onboarding@resend.dev>';
+
 export const serverEnv = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3000),
@@ -37,6 +40,8 @@ export const serverEnv = {
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY ?? '',
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET ?? '',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
+  resendFromEmail:
+    process.env.RESEND_FROM_EMAIL?.trim() || DEFAULT_RESEND_FROM_EMAIL,
   whatsappBusinessToken: process.env.WHATSAPP_BUSINESS_TOKEN ?? '',
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
 };

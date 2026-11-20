@@ -168,6 +168,22 @@ export async function fetchAuthSession(
   });
 }
 
+export interface PasswordResetResponse {
+  ok: true;
+  provider: 'resend';
+  message: string;
+}
+
+export async function requestPasswordReset(
+  email: string,
+  redirectTo?: string,
+): Promise<PasswordResetResponse> {
+  return apiFetch<PasswordResetResponse>('/api/auth/password-reset', {
+    method: 'POST',
+    body: redirectTo ? { email, redirectTo } : { email },
+  });
+}
+
 export async function probeAdminAuthStatus(accessToken?: string | null): Promise<{
   ok: boolean;
   status: number;

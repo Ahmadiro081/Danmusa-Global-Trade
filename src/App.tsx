@@ -16,9 +16,11 @@ import { CustomerOrdersPage } from './pages/customer/CustomerOrdersPage';
 import { CustomerQuotationsPage } from './pages/customer/CustomerQuotationsPage';
 import { CustomerSettingsPage } from './pages/customer/CustomerSettingsPage';
 import { CustomerSourcingPage } from './pages/customer/CustomerSourcingPage';
+import { ForgotPasswordPage } from './pages/customer/ForgotPasswordPage';
 import { LoginPage } from './pages/customer/LoginPage';
 import { OrderTrackingPage } from './pages/customer/OrderTrackingPage';
 import { RegisterPage } from './pages/customer/RegisterPage';
+import { ResetPasswordPage } from './pages/customer/ResetPasswordPage';
 import { AboutPage } from './pages/public/AboutPage';
 import { CataloguePage } from './pages/public/CataloguePage';
 import { ContactPage } from './pages/public/ContactPage';
@@ -47,6 +49,8 @@ export default function App() {
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/checkout" element={<CheckoutPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>

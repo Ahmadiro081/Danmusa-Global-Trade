@@ -759,12 +759,56 @@ export function createAdminRouter(
     const supabase = authResolver.getAdminClient()!;
     const { data, error } = await supabase
       .from('staff_accounts')
-      .select('id, user_id, department, is_active, created_at, roles(slug, name), user_profiles(full_name, email)');
-    if (error) {
+      .select(
+        'id, user_id, department, is_active, created_at, roles(slug, name), user_profiles:user_profiles!staff_accounts_user_id_fkey(full_name, email)',
+      )
+      .order('created_at', { ascending: false });
+
+    if (!error) {
+      res.json({ staff: data ?? [] });
+      return;
+    }
+
+    // Fallback if foreign-key constraint name differs across environments
+    const { data: baseStaff, error: baseErr } = await supabase
+      .from('staff_accounts')
+      .select('id, user_id, department, is_active, created_at, roles(slug, name)')
+      .order('created_at', { ascending: false });
+
+    if (baseErr) {
       res.status(500).json({ error: 'Failed to load staff accounts' });
       return;
     }
-    res.json({ staff: data ?? [] });
+
+    const rows = (baseStaff ?? []) as Array<Record<string, unknown>>;
+    const userIds = rows
+      .map((r) => (typeof r.user_id === 'string' ? r.user_id : null))
+      .filter((id): id is string => Boolean(id));
+
+    let profileById = new Map<string, { full_name: string | null; email: string | null }>();
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, email')
+        .in('id', userIds);
+      for (const p of (profiles ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        email: string | null;
+      }>) {
+        profileById.set(p.id, { full_name: p.full_name, email: p.email });
+      }
+    }
+
+    const enriched = rows.map((row) => ({
+      ...row,
+      user_profiles:
+        typeof row.user_id === 'string'
+          ? (profileById.get(row.user_id) ?? null)
+          : null,
+    }));
+
+    res.json({ staff: enriched });
   });
 
   router.post(
