@@ -6,7 +6,7 @@ import {
   type AuthResolver,
 } from './middleware/security.ts';
 import { createAdminRouter } from './routes/admin.ts';
-import { createAuthRouter } from './routes/auth.ts';
+import { createAuthRouter, type AuthRouterOptions } from './routes/auth.ts';
 import { createCatalogueRouter } from './routes/catalogue.ts';
 import { createCustomerRouter } from './routes/customer.ts';
 import { healthRouter } from './routes/health.ts';
@@ -19,6 +19,7 @@ import {
 export function createDgtApiApp(
   authResolver: AuthResolver = defaultAuthResolver,
   emailService: EmailService = defaultEmailService,
+  authOptions?: AuthRouterOptions,
 ): Express {
   const app = express();
 
@@ -28,7 +29,7 @@ export function createDgtApiApp(
   app.use(express.json({ limit: '1mb' }));
 
   app.use('/api/health', healthRouter);
-  app.use('/api/auth', createAuthRouter(authResolver, emailService));
+  app.use('/api/auth', createAuthRouter(authResolver, emailService, authOptions));
   app.use('/api', platformRouter);
   app.use('/api', createCatalogueRouter(authResolver));
   app.use('/api/customer', createCustomerRouter(authResolver));

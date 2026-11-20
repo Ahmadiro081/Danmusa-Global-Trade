@@ -25,6 +25,7 @@ import {
   getSupabaseClient,
   isSupabaseClientConfigured,
 } from '../../services/supabaseClient';
+import { shouldTriggerNativeSupabaseFallback } from '../../utils/recoverySession';
 
 const forgotPasswordSchema = z.object({
   email: z
@@ -43,7 +44,6 @@ export function ForgotPasswordPage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [deliveryChannel, setDeliveryChannel] = useState<'resend' | 'supabase' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
@@ -60,19 +60,18 @@ export function ForgotPasswordPage() {
     setSubmitting(true);
 
     const redirectTo = `${window.location.origin}/reset-password`;
+    const neutralConfirmation =
+      'If an account exists for that email address, a secure password reset link has been sent. Check your inbox and spam folder.';
 
     try {
       const response = await requestPasswordReset(targetEmail, redirectTo);
       setSubmittedEmail(targetEmail);
-      setDeliveryChannel('resend');
-      setSuccessMessage(response.message);
+      setSuccessMessage(response.message || neutralConfirmation);
       setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
-      // If Resend is not yet configured on the server, fall back gracefully to Supabase native recovery email.
-      if (
-        err instanceof ApiRequestError &&
-        (err.code === 'RESEND_NOT_CONFIGURED' || err.status === 503)
-      ) {
+      // Strictly fall back to Supabase native recovery ONLY when server exited before generateLink
+      // with RESEND_NOT_CONFIGURED (never on transient 503/502/timeout, preventing duplicate links).
+      if (shouldTriggerNativeSupabaseFallback(err)) {
         const client = getSupabaseClient();
         if (client) {
           const { error: sbError } = await client.auth.resetPasswordForEmail(
@@ -81,14 +80,13 @@ export function ForgotPasswordPage() {
           );
           if (!sbError) {
             setSubmittedEmail(targetEmail);
-            setDeliveryChannel('supabase');
-            setSuccessMessage(
-              'If an account exists for that email address, a secure password reset link has been sent. Check your inbox and spam folder.',
-            );
+            setSuccessMessage(neutralConfirmation);
             setCooldown(RESEND_COOLDOWN_SECONDS);
             return;
           }
-          setSubmitError(sbError.message);
+          setSubmitError(
+            'Unable to process your password reset request right now. Please try again in a few minutes.',
+          );
           return;
         }
       }
@@ -180,11 +178,7 @@ export function ForgotPasswordPage() {
               <AlertBanner
                 tone="info"
                 title="What happens next?"
-                message={
-                  deliveryChannel === 'resend'
-                    ? 'Open the Danmusa Global Trade recovery email and click "Reset Your Password". You will be brought directly to the secure password update form.'
-                    : 'Open the recovery email and follow the secure link to set your new password. Recovery links expire automatically for your protection.'
-                }
+                message="Open the Danmusa Global Trade recovery email and follow the single-use link to set a new password. Recovery links expire automatically for your security."
               />
 
               <div className="flex flex-col gap-2.5 sm:flex-row">

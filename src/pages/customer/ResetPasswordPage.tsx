@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import {
@@ -21,18 +21,31 @@ import {
   LoadingSkeleton,
 } from '../../components/ui/StateViews';
 import { useAuth } from '../../context/AuthContext';
+import type { VerifiedAuthSession } from '../../services/apiClient';
 import {
   getSupabaseClient,
   isSupabaseClientConfigured,
 } from '../../services/supabaseClient';
 import { resolvePostLoginDestination } from '../../utils/authRouting';
+import {
+  canGrantRecoveryFormAccess,
+  parseRecoveryUrlSignals,
+} from '../../utils/recoverySession';
 
 const updatePasswordSchema = z
   .object({
     password: z
       .string()
       .min(8, 'Password must be at least 8 characters long.')
-      .max(128, 'Password must be 128 characters or fewer.'),
+      .max(128, 'Password must be 128 characters or fewer.')
+      .refine(
+        (val) => /[A-Z]/.test(val) && /[a-z]/.test(val),
+        'Password must include both uppercase and lowercase letters.',
+      )
+      .refine(
+        (val) => /\d/.test(val),
+        'Password must include at least one number.',
+      ),
     confirmPassword: z.string().min(1, 'Please confirm your new password.'),
   })
   .refine((val) => val.password === val.confirmPassword, {
@@ -40,27 +53,10 @@ const updatePasswordSchema = z
     path: ['confirmPassword'],
   });
 
-function readUrlAuthError(): string | null {
-  const searchParams = new URLSearchParams(window.location.search);
-  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-
-  const errorDesc =
-    hashParams.get('error_description') ||
-    searchParams.get('error_description') ||
-    hashParams.get('error') ||
-    searchParams.get('error');
-
-  if (!errorDesc) return null;
-
-  const decoded = errorDesc.replace(/\+/g, ' ');
-  const lower = decoded.toLowerCase();
-  if (lower.includes('expired') || lower.includes('otp_expired')) {
-    return 'This password reset link has expired. Please request a fresh recovery link below.';
+function scrubRecoveryParamsFromHistory() {
+  if (typeof window !== 'undefined' && window.history?.replaceState) {
+    window.history.replaceState(null, '', '/reset-password');
   }
-  if (lower.includes('invalid') || lower.includes('access_denied')) {
-    return 'This password reset link is invalid or has already been used. Request a new link to continue.';
-  }
-  return decoded;
 }
 
 export function ResetPasswordPage() {
@@ -81,7 +77,8 @@ export function ResetPasswordPage() {
   } = useAuth();
 
   const [checkingLink, setCheckingLink] = useState(true);
-  const [hasRecoverySession, setHasRecoverySession] = useState(false);
+  const [verifiedByUrlRecoveryFlow, setVerifiedByUrlRecoveryFlow] = useState(false);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const [password, setPassword] = useState('');
@@ -92,17 +89,30 @@ export function ResetPasswordPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [updatedSuccess, setUpdatedSuccess] = useState(false);
+  const [postResetSession, setPostResetSession] =
+    useState<VerifiedAuthSession | null>(null);
 
-  // Establish or verify the Supabase Auth recovery session from PKCE ?code= or hash tokens.
+  // Prevent double-exchanging single-use PKCE/OTP codes across React StrictMode re-mounts.
+  const exchangedRef = useRef(false);
+
+  // Establish and verify ONLY genuine Supabase Auth recovery flows (PKCE ?code=,
+  // OTP ?token_hash=&type=recovery, or implicit #access_token=&type=recovery).
+  // Ordinary authenticated sessions MUST NOT bypass recovery-session validation.
   useEffect(() => {
     let active = true;
 
     async function verifyRecoveryLink() {
-      const urlError = readUrlAuthError();
-      if (urlError) {
+      const signals = parseRecoveryUrlSignals(
+        window.location.search,
+        window.location.hash,
+      );
+
+      if (signals.errorMessage) {
+        scrubRecoveryParamsFromHistory();
         if (active) {
-          setLinkError(urlError);
-          setHasRecoverySession(false);
+          setLinkError(signals.errorMessage);
+          setVerifiedByUrlRecoveryFlow(false);
+          setHasActiveSession(false);
           setCheckingLink(false);
         }
         return;
@@ -112,70 +122,84 @@ export function ResetPasswordPage() {
       if (!client) {
         if (active) {
           setCheckingLink(false);
-          setHasRecoverySession(false);
+          setVerifiedByUrlRecoveryFlow(false);
+          setHasActiveSession(false);
         }
         return;
       }
 
-      const pkceCode = searchParams.get('code');
-      const tokenHash = searchParams.get('token_hash');
-      const queryType = searchParams.get('type');
-
       try {
-        if (pkceCode) {
+        let verifiedViaUrl = false;
+
+        if (signals.pkceCode && !exchangedRef.current) {
+          exchangedRef.current = true;
           const { error: exchangeErr } =
-            await client.auth.exchangeCodeForSession(pkceCode);
-          if (exchangeErr && active) {
-            setLinkError(
-              'This password reset link is invalid or has expired. Please request a new reset link.',
-            );
-            setHasRecoverySession(false);
-            setCheckingLink(false);
+            await client.auth.exchangeCodeForSession(signals.pkceCode);
+          scrubRecoveryParamsFromHistory();
+          if (exchangeErr) {
+            if (active) {
+              setLinkError(
+                'This password reset link is invalid or has expired. Please request a new reset link.',
+              );
+              setVerifiedByUrlRecoveryFlow(false);
+              setHasActiveSession(false);
+              setCheckingLink(false);
+            }
             return;
           }
-        } else if (tokenHash && queryType === 'recovery') {
+          verifiedViaUrl = true;
+        } else if (
+          signals.isTokenHashRecovery &&
+          signals.tokenHash &&
+          !exchangedRef.current
+        ) {
+          exchangedRef.current = true;
           const { error: verifyErr } = await client.auth.verifyOtp({
-            token_hash: tokenHash,
+            token_hash: signals.tokenHash,
             type: 'recovery',
           });
-          if (verifyErr && active) {
-            setLinkError(
-              'This password reset link is invalid or has expired. Please request a new reset link.',
-            );
-            setHasRecoverySession(false);
-            setCheckingLink(false);
+          scrubRecoveryParamsFromHistory();
+          if (verifyErr) {
+            if (active) {
+              setLinkError(
+                'This password reset link is invalid or has expired. Please request a new reset link.',
+              );
+              setVerifiedByUrlRecoveryFlow(false);
+              setHasActiveSession(false);
+              setCheckingLink(false);
+            }
             return;
           }
+          verifiedViaUrl = true;
+        } else if (signals.hasImplicitRecoveryHash) {
+          // Wait briefly for Supabase client to hydrate implicit hash recovery tokens.
+          await new Promise((resolve) => window.setTimeout(resolve, 450));
+          const { data: hashSession } = await client.auth.getSession();
+          scrubRecoveryParamsFromHistory();
+          if (hashSession.session) {
+            verifiedViaUrl = true;
+          }
+        } else if (signals.hasSensitiveUrlParams) {
+          scrubRecoveryParamsFromHistory();
         }
 
         const { data } = await client.auth.getSession();
         if (active) {
-          if (data.session) {
-            setHasRecoverySession(true);
+          setHasActiveSession(Boolean(data.session));
+          if (verifiedViaUrl) {
+            setVerifiedByUrlRecoveryFlow(true);
             setLinkError(null);
-          } else {
-            // Brief wait for implicit hash fragment listener to hydrate if present
-            const hasHashToken =
-              window.location.hash.includes('access_token=') ||
-              window.location.hash.includes('type=recovery');
-            if (hasHashToken) {
-              await new Promise((resolve) => window.setTimeout(resolve, 450));
-              const retry = await client.auth.getSession();
-              if (active) {
-                setHasRecoverySession(Boolean(retry.data.session));
-              }
-            } else {
-              setHasRecoverySession(false);
-            }
           }
           setCheckingLink(false);
         }
       } catch {
+        scrubRecoveryParamsFromHistory();
         if (active) {
           setLinkError(
             'Unable to verify your password reset link. Please request a fresh recovery email.',
           );
-          setHasRecoverySession(false);
+          setVerifiedByUrlRecoveryFlow(false);
+          setHasActiveSession(false);
           setCheckingLink(false);
         }
       }
@@ -188,14 +212,21 @@ export function ResetPasswordPage() {
     };
   }, [searchParams]);
 
-  // Also respond immediately when AuthContext fires PASSWORD_RECOVERY.
+  // Respond when AuthContext explicitly captures Supabase's PASSWORD_RECOVERY event.
   useEffect(() => {
-    if (passwordRecoveryPending || isAuthenticated) {
-      setHasRecoverySession(true);
+    if (passwordRecoveryPending) {
+      setHasActiveSession(true);
       setLinkError(null);
       setCheckingLink(false);
     }
-  }, [passwordRecoveryPending, isAuthenticated]);
+  }, [passwordRecoveryPending]);
+
+  // Strictly require an explicit recovery session — ordinary logged-in sessions cannot bypass.
+  const hasRecoverySession = canGrantRecoveryFormAccess({
+    passwordRecoveryPending,
+    verifiedByUrlRecoveryFlow,
+    hasActiveSession: hasActiveSession || isAuthenticated,
+  });
 
   const requirements = useMemo(
     () => [
@@ -217,6 +248,13 @@ export function ResetPasswordPage() {
     event.preventDefault();
     setSubmitError(null);
     setFieldErrors({});
+
+    if (!hasRecoverySession) {
+      setSubmitError(
+        'A verified password recovery link is required before updating your password here.',
+      );
+      return;
+    }
 
     const parsed = updatePasswordSchema.safeParse({
       password,
@@ -241,9 +279,9 @@ export function ResetPasswordPage() {
     const { error } = await client.auth.updateUser({
       password: parsed.data.password,
     });
-    setSubmitting(false);
 
     if (error) {
+      setSubmitting(false);
       const lower = error.message.toLowerCase();
       if (lower.includes('different from the old password')) {
         setSubmitError(
@@ -256,31 +294,43 @@ export function ResetPasswordPage() {
         setSubmitError(
           'Your recovery session has expired. Please request a new password reset link.',
         );
-        setHasRecoverySession(false);
+        setVerifiedByUrlRecoveryFlow(false);
+        setHasActiveSession(false);
       } else {
         setSubmitError(error.message);
       }
       return;
     }
 
+    // Re-verify authoritative database role & staff active status from /api/auth/session
+    // BEFORE presenting the post-reset portal destination.
+    const verifiedSession = await refreshSession();
     clearPasswordRecovery();
+    setPostResetSession(verifiedSession);
     setPassword('');
     setConfirmPassword('');
+    setSubmitting(false);
     setUpdatedSuccess(true);
-    await refreshSession();
   };
 
+  const effectiveIsStaff = postResetSession?.isStaff ?? isStaff;
+  const effectiveIsInactiveStaff =
+    postResetSession?.isInactiveStaff ?? isInactiveStaff;
+  const effectiveRole = postResetSession?.role ?? role;
+  const effectiveModules =
+    postResetSession?.authorizedAdminModules ?? authorizedAdminModules;
+
   const handleContinueToPortal = async () => {
-    if (isInactiveStaff) {
+    if (effectiveIsInactiveStaff) {
       await signOut();
       navigate('/login', { replace: true });
       return;
     }
     const destination = resolvePostLoginDestination({
-      role,
-      isStaff,
-      isInactiveStaff,
-      authorizedAdminModules,
+      role: effectiveRole,
+      isStaff: effectiveIsStaff,
+      isInactiveStaff: effectiveIsInactiveStaff,
+      authorizedAdminModules: effectiveModules,
     });
     navigate(destination ?? '/login', { replace: true });
   };
@@ -338,7 +388,8 @@ export function ResetPasswordPage() {
               </div>
 
               <div className="flex flex-col gap-2.5">
-                {isAuthenticated && !isInactiveStaff ? (
+                {(postResetSession || isAuthenticated) &&
+                !effectiveIsInactiveStaff ? (
                   <Button
                     type="button"
                     variant="primary"
@@ -346,7 +397,7 @@ export function ResetPasswordPage() {
                     fullWidth
                     onClick={() => void handleContinueToPortal()}
                   >
-                    {isStaff
+                    {effectiveIsStaff
                       ? 'Continue to Admin Console'
                       : 'Continue to Customer Portal'}
                     <ArrowRight className="h-4 w-4" />
@@ -381,19 +432,30 @@ export function ResetPasswordPage() {
                   <AlertTriangle className="h-5 w-5" />
                 </div>
                 <h2 className="font-display text-base font-bold text-[#10243A]">
-                  Recovery Session Required
+                  Verified Recovery Link Required
                 </h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">
                   {linkError ??
-                    'Open the password reset link directly from your email inbox to verify your identity before choosing a new password.'}
+                    (isAuthenticated
+                      ? 'You are signed in with a standard session. For security, password recovery requires opening a fresh single-use link from your email, or you can update your password inside Account Settings.'
+                      : 'Open the password reset link directly from your email inbox to verify your identity before choosing a new password.')}
                 </p>
               </div>
 
-              <Link to="/forgot-password">
-                <Button variant="primary" size="lg" fullWidth>
-                  Request a New Reset Link
-                </Button>
-              </Link>
+              <div className="flex flex-col gap-2.5">
+                <Link to="/forgot-password">
+                  <Button variant="primary" size="lg" fullWidth>
+                    Request a New Reset Link
+                  </Button>
+                </Link>
+                {isAuthenticated && !isStaff && (
+                  <Link to="/account/settings">
+                    <Button variant="outline" size="md" fullWidth>
+                      Go to Account Settings
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4" noValidate>

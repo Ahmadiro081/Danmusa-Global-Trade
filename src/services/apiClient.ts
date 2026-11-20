@@ -170,7 +170,6 @@ export async function fetchAuthSession(
 
 export interface PasswordResetResponse {
   ok: true;
-  provider: 'resend';
   message: string;
 }
 

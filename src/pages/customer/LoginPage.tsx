@@ -11,15 +11,13 @@ import {
   IntegrationNotice,
 } from '../../components/ui/StateViews';
 import { useAuth } from '../../context/AuthContext';
-import {
-  ApiRequestError,
-  requestPasswordReset,
-} from '../../services/apiClient';
+import { requestPasswordReset } from '../../services/apiClient';
 import {
   getSupabaseClient,
   isSupabaseClientConfigured,
 } from '../../services/supabaseClient';
 import { resolvePostLoginDestination } from '../../utils/authRouting';
+import { shouldTriggerNativeSupabaseFallback } from '../../utils/recoverySession';
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email address.'),
@@ -186,10 +184,7 @@ export function LoginPage() {
       const response = await requestPasswordReset(parsed.data.email, redirectTo);
       setStatusMessage(response.message);
     } catch (err) {
-      if (
-        err instanceof ApiRequestError &&
-        (err.code === 'RESEND_NOT_CONFIGURED' || err.status === 503)
-      ) {
+      if (shouldTriggerNativeSupabaseFallback(err)) {
         const client = getSupabaseClient();
         if (client) {
           const { error } = await client.auth.resetPasswordForEmail(
@@ -198,11 +193,13 @@ export function LoginPage() {
           );
           if (!error) {
             setStatusMessage(
-              'If an account exists for that email address, a password recovery link has been dispatched.',
+              'If an account exists for that email address, a secure password reset link has been sent. Check your inbox and spam folder.',
             );
             return;
           }
-          setAuthError(error.message);
+          setAuthError(
+            'Unable to send password reset link right now. Please try again shortly.',
+          );
           return;
         }
       }

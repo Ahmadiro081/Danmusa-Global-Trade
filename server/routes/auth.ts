@@ -60,10 +60,26 @@ const NEUTRAL_RESET_SUCCESS_MESSAGE =
 
 const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const RESET_RATE_MAX_ATTEMPTS = 5;
+const MAX_RATE_BUCKETS = 10_000;
+const DEFAULT_PRODUCTION_ORIGIN = 'https://danmusa-global-trade.vercel.app';
+const DEFAULT_MIN_RESPONSE_MS = 220;
+
+export interface AuthRouterOptions {
+  /**
+   * Minimum response duration (ms) for password-reset requests to narrow timing
+   * differences between registered and unregistered accounts.
+   */
+  minResetResponseMs?: number;
+  /**
+   * Server-side logger for internal delivery diagnostics (never sent to clients).
+   */
+  logger?: (event: string, metadata: Record<string, unknown>) => void;
+}
 
 function createSlidingWindowLimiter(
   windowMs = RESET_RATE_WINDOW_MS,
   maxAttempts = RESET_RATE_MAX_ATTEMPTS,
+  maxBuckets = MAX_RATE_BUCKETS,
 ) {
   const buckets = new Map<string, number[]>();
 
@@ -75,6 +91,12 @@ function createSlidingWindowLimiter(
         buckets.set(key, recent);
         return true;
       }
+      if (!buckets.has(key) && buckets.size >= maxBuckets) {
+        const oldestKey = buckets.keys().next().value;
+        if (oldestKey !== undefined) {
+          buckets.delete(oldestKey);
+        }
+      }
       recent.push(now);
       buckets.set(key, recent);
       return false;
@@ -82,71 +104,173 @@ function createSlidingWindowLimiter(
   };
 }
 
-function resolveTrustedOrigin(req: Request): string {
-  const forwardedProto = req
-    .header('x-forwarded-proto')
+function parseValidHttpOrigin(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withScheme =
+    /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(withScheme);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return null;
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds the strict trusted-origin allowlist exclusively from server-controlled
+ * configuration (APP_URL, ALLOWED_REDIRECT_ORIGINS, Vercel deployment URLs).
+ * Never derives trust from untrusted request headers such as X-Forwarded-Host.
+ */
+export function getTrustedResetOrigins(): {
+  canonicalOrigin: string;
+  allowedOrigins: Set<string>;
+  allowLocalDevOrigin: boolean;
+} {
+  const nodeEnv = (process.env.NODE_ENV ?? serverEnv.nodeEnv).trim();
+  const isProduction = nodeEnv === 'production';
+  const allowedOrigins = new Set<string>();
+
+  const configuredAppUrl = (process.env.APP_URL ?? serverEnv.appUrl).trim();
+  const appOrigin = parseValidHttpOrigin(configuredAppUrl);
+
+  const prodVercelOrigin = parseValidHttpOrigin(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ?? serverEnv.vercelProductionUrl,
+  );
+  const deployVercelOrigin = parseValidHttpOrigin(
+    process.env.VERCEL_URL ?? serverEnv.vercelUrl,
+  );
+
+  // In production, ignore localhost APP_URL defaults and prefer explicit production origins.
+  const isLocalhostOrigin = (origin: string) =>
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+
+  if (appOrigin && (!isProduction || !isLocalhostOrigin(appOrigin))) {
+    allowedOrigins.add(appOrigin);
+  }
+  if (prodVercelOrigin) {
+    allowedOrigins.add(prodVercelOrigin);
+  }
+  if (deployVercelOrigin) {
+    allowedOrigins.add(deployVercelOrigin);
+  }
+
+  const extraRaw = (
+    process.env.ALLOWED_REDIRECT_ORIGINS ?? serverEnv.allowedRedirectOrigins
+  ).trim();
+  if (extraRaw) {
+    for (const part of extraRaw.split(',')) {
+      const origin = parseValidHttpOrigin(part);
+      if (origin && (!isProduction || !isLocalhostOrigin(origin))) {
+        allowedOrigins.add(origin);
+      }
+    }
+  }
+
+  // Always trust the canonical DGT production origin.
+  allowedOrigins.add(DEFAULT_PRODUCTION_ORIGIN);
+
+  let canonicalOrigin: string;
+  if (isProduction) {
+    canonicalOrigin =
+      (appOrigin && !isLocalhostOrigin(appOrigin) ? appOrigin : null) ??
+      prodVercelOrigin ??
+      deployVercelOrigin ??
+      DEFAULT_PRODUCTION_ORIGIN;
+  } else {
+    canonicalOrigin = appOrigin ?? 'http://localhost:3000';
+    allowedOrigins.add(canonicalOrigin);
+  }
+
+  return {
+    canonicalOrigin,
+    allowedOrigins,
+    allowLocalDevOrigin: !isProduction,
+  };
+}
+
+/**
+ * Strictly validates an optional client-supplied redirectTo URL.
+ * - Rejects arbitrary external origins, spoofed hosts, non-HTTP schemes,
+ *   embedded credentials, unexpected paths, query strings, or hash fragments.
+ * - Resolves to `${canonicalOrigin}/reset-password` when omitted.
+ */
+export function resolveStrictResetRedirectUrl(
+  requestedRedirect?: string,
+): { ok: true; url: string } | { ok: false; error: string } {
+  const { canonicalOrigin, allowedOrigins, allowLocalDevOrigin } =
+    getTrustedResetOrigins();
+
+  if (!requestedRedirect) {
+    return { ok: true, url: `${canonicalOrigin}/reset-password` };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(requestedRedirect);
+  } catch {
+    return { ok: false, error: 'Invalid password reset redirect URL.' };
+  }
+
+  const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  if (!isHttp || parsed.username || parsed.password) {
+    return { ok: false, error: 'Invalid password reset redirect URL.' };
+  }
+
+  if (parsed.pathname !== '/reset-password' || parsed.search || parsed.hash) {
+    return {
+      ok: false,
+      error: 'Password reset redirect must target the /reset-password route.',
+    };
+  }
+
+  const isAllowedLocal =
+    allowLocalDevOrigin &&
+    parsed.protocol === 'http:' &&
+    (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+
+  if (!allowedOrigins.has(parsed.origin) && !isAllowedLocal) {
+    return {
+      ok: false,
+      error: 'Untrusted password reset redirect origin.',
+    };
+  }
+
+  return { ok: true, url: `${parsed.origin}/reset-password` };
+}
+
+function getClientIp(req: Request): string {
+  const vercelForwarded = req
+    .header('x-vercel-forwarded-for')
     ?.split(',')[0]
     ?.trim();
-  const forwardedHost = req.header('x-forwarded-host')?.split(',')[0]?.trim();
-  const host = forwardedHost || req.header('host')?.trim();
-
-  if (host) {
-    const protocol =
-      forwardedProto || (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https');
-    try {
-      const parsed = new URL(`${protocol}://${host}`);
-      return parsed.origin;
-    } catch {
-      // Fall through to APP_URL
-    }
-  }
-
-  try {
-    return new URL(serverEnv.appUrl).origin;
-  } catch {
-    return 'http://localhost:3000';
-  }
+  if (vercelForwarded) return vercelForwarded;
+  return req.ip || 'unknown';
 }
 
-export function buildSafeResetRedirectUrl(
-  req: Request,
-  requestedRedirect?: string,
-): string {
-  const trustedOrigin = resolveTrustedOrigin(req);
-  const configuredOrigins = new Set<string>([trustedOrigin]);
-
-  try {
-    configuredOrigins.add(new URL(serverEnv.appUrl).origin);
-  } catch {
-    // Ignore malformed APP_URL
-  }
-
-  if (requestedRedirect) {
-    try {
-      const parsed = new URL(requestedRedirect);
-      const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
-      if (
-        isHttp &&
-        configuredOrigins.has(parsed.origin) &&
-        (parsed.pathname === '/reset-password' ||
-          parsed.pathname === '/login')
-      ) {
-        return `${parsed.origin}${parsed.pathname}${parsed.search}`;
-      }
-    } catch {
-      // Fall back to default trusted reset-password path
-    }
-  }
-
-  return `${trustedOrigin}/reset-password`;
-}
-
-function isUserNotFoundError(err: { message?: string; status?: number; code?: string } | null): boolean {
+function isUserNotFoundError(
+  err: { message?: string; status?: number; code?: string } | null,
+): boolean {
   if (!err) return false;
   if (err.status === 404) return true;
   if (err.code === 'user_not_found') return true;
   const msg = (err.message ?? '').toLowerCase();
   return msg.includes('user not found') || msg.includes('not found');
+}
+
+async function enforceMinimumResponseFloor(
+  startedAtMs: number,
+  minDurationMs: number,
+): Promise<void> {
+  if (minDurationMs <= 0) return;
+  const elapsed = Date.now() - startedAtMs;
+  const remaining = minDurationMs - elapsed;
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
 }
 
 /**
@@ -156,9 +280,18 @@ function isUserNotFoundError(err: { message?: string; status?: number; code?: st
 export function createAuthRouter(
   authResolver: AuthResolver = defaultAuthResolver,
   emailService: EmailService = defaultEmailService,
+  options: AuthRouterOptions = {},
 ): Router {
   const router = Router();
   const resetLimiter = createSlidingWindowLimiter();
+  const minResetResponseMs =
+    options.minResetResponseMs ??
+    (process.env.NODE_ENV === 'test' ? 0 : DEFAULT_MIN_RESPONSE_MS);
+  const logServerEvent =
+    options.logger ??
+    ((event: string, metadata: Record<string, unknown>) => {
+      console.error(`[DGT Auth] ${event}`, JSON.stringify(metadata));
+    });
 
   router.get('/session', async (req, res) => {
     const authHeader = req.headers.authorization;
@@ -248,11 +381,17 @@ export function createAuthRouter(
 
   /**
    * Generates a genuine Supabase Auth recovery link server-side and delivers a
-   * branded Danmusa Global Trade email through Resend. Works identically for
-   * both registered customers and staff administrators without leaking whether
-   * an email address exists in the database.
+   * branded Danmusa Global Trade email through Resend.
+   *
+   * Security invariants:
+   * - Strict trusted-origin validation (never trusts X-Forwarded-Host).
+   * - Indistinguishable HTTP 200 responses for registered, unregistered, and
+   *   post-lookup delivery failures to prevent account enumeration.
+   * - Detailed delivery diagnostics logged exclusively server-side without
+   *   ever logging recovery links, tokens, or API keys.
    */
   router.post('/password-reset', async (req, res) => {
+    const startedAtMs = Date.now();
     res.setHeader('Cache-Control', 'no-store');
 
     const parsed = passwordResetRequestSchema.safeParse(req.body);
@@ -264,8 +403,19 @@ export function createAuthRouter(
       return;
     }
 
+    const redirectResolution = resolveStrictResetRedirectUrl(
+      parsed.data.redirectTo,
+    );
+    if (!redirectResolution.ok) {
+      res.status(400).json({
+        error: redirectResolution.error,
+        code: 'INVALID_REDIRECT_URL',
+      });
+      return;
+    }
+
     const email = parsed.data.email.toLowerCase();
-    const clientIp = req.ip || 'unknown';
+    const clientIp = getClientIp(req);
     if (
       resetLimiter.isLimited(`ip:${clientIp}`) ||
       resetLimiter.isLimited(`email:${email}`)
@@ -295,65 +445,72 @@ export function createAuthRouter(
       return;
     }
 
-    const safeRedirectUrl = buildSafeResetRedirectUrl(req, parsed.data.redirectTo);
+    try {
+      const { data, error } = await adminClient.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: {
+          redirectTo: redirectResolution.url,
+        },
+      });
 
-    const { data, error } = await adminClient.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: {
-        redirectTo: safeRedirectUrl,
-      },
-    });
-
-    if (error) {
-      if (isUserNotFoundError(error)) {
-        // Prevent account enumeration: respond identically to valid emails.
+      if (error) {
+        if (!isUserNotFoundError(error)) {
+          logServerEvent('password_reset_generate_link_failed', {
+            code: error.code ?? 'RECOVERY_LINK_ERROR',
+            status: error.status ?? 500,
+          });
+        }
+        await enforceMinimumResponseFloor(startedAtMs, minResetResponseMs);
         res.status(200).json({
           ok: true,
-          provider: 'resend',
           message: NEUTRAL_RESET_SUCCESS_MESSAGE,
         });
         return;
       }
 
-      res.status(500).json({
-        error: 'Unable to generate a password recovery link right now. Please try again.',
-        code: 'RECOVERY_LINK_ERROR',
+      const actionLink = data?.properties?.action_link;
+      if (!actionLink) {
+        logServerEvent('password_reset_missing_action_link', {
+          code: 'RECOVERY_LINK_MISSING',
+        });
+        await enforceMinimumResponseFloor(startedAtMs, minResetResponseMs);
+        res.status(200).json({
+          ok: true,
+          message: NEUTRAL_RESET_SUCCESS_MESSAGE,
+        });
+        return;
+      }
+
+      const recipientName =
+        typeof data.user?.user_metadata?.full_name === 'string'
+          ? data.user.user_metadata.full_name
+          : null;
+
+      const delivery = await emailService.sendPasswordResetEmail({
+        to: email,
+        resetLink: actionLink,
+        recipientName,
       });
-      return;
+
+      if (!delivery.ok) {
+        // Log detailed delivery error strictly server-side; never expose token/link or leak account existence to client.
+        logServerEvent('password_reset_email_delivery_failed', {
+          code: delivery.code,
+          status: delivery.status,
+          from: emailService.getFromEmail(),
+          reason: delivery.error,
+        });
+      }
+    } catch {
+      logServerEvent('password_reset_unexpected_error', {
+        code: 'UNEXPECTED_ERROR',
+      });
     }
 
-    const actionLink = data?.properties?.action_link;
-    if (!actionLink) {
-      res.status(500).json({
-        error: 'Recovery link could not be generated. Please try again.',
-        code: 'RECOVERY_LINK_MISSING',
-      });
-      return;
-    }
-
-    const recipientName =
-      typeof data.user?.user_metadata?.full_name === 'string'
-        ? data.user.user_metadata.full_name
-        : null;
-
-    const delivery = await emailService.sendPasswordResetEmail({
-      to: email,
-      resetLink: actionLink,
-      recipientName,
-    });
-
-    if (!delivery.ok) {
-      res.status(delivery.status).json({
-        error: delivery.error,
-        code: delivery.code,
-      });
-      return;
-    }
-
+    await enforceMinimumResponseFloor(startedAtMs, minResetResponseMs);
     res.status(200).json({
       ok: true,
-      provider: 'resend',
       message: NEUTRAL_RESET_SUCCESS_MESSAGE,
     });
   });
