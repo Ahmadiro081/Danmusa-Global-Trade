@@ -1,23 +1,34 @@
 import type { PortalNavItem } from '../../components/layout/PortalLayout';
+import type { RoleSlug } from '../../types/domain';
+import { canAccessAdminModule } from '../../utils/authRouting';
 
-export const ADMIN_PORTAL_NAV: readonly PortalNavItem[] = [
-  { to: '/admin', label: 'Overview', end: true },
-  { to: '/admin/products', label: 'Products' },
-  { to: '/admin/categories', label: 'Categories' },
-  { to: '/admin/inventory', label: 'Inventory' },
-  { to: '/admin/customers', label: 'Customers' },
-  { to: '/admin/orders', label: 'Orders' },
-  { to: '/admin/quotations', label: 'Quotations' },
-  { to: '/admin/sourcing', label: 'Sourcing Requests' },
-  { to: '/admin/payments', label: 'Payments' },
-  { to: '/admin/procurement', label: 'Procurement' },
-  { to: '/admin/shipments', label: 'Shipments' },
-  { to: '/admin/deliveries', label: 'Deliveries' },
-  { to: '/admin/staff', label: 'Staff & RBAC' },
-  { to: '/admin/reports', label: 'Reports' },
-  { to: '/admin/audit-logs', label: 'Audit Logs' },
-  { to: '/admin/settings', label: 'Settings' },
+export const ADMIN_PORTAL_NAV: readonly (PortalNavItem & { slug: string })[] = [
+  { to: '/admin', label: 'Overview', slug: 'overview', end: true },
+  { to: '/admin/products', label: 'Products', slug: 'products' },
+  { to: '/admin/categories', label: 'Categories', slug: 'categories' },
+  { to: '/admin/inventory', label: 'Inventory', slug: 'inventory' },
+  { to: '/admin/customers', label: 'Customers', slug: 'customers' },
+  { to: '/admin/orders', label: 'Orders', slug: 'orders' },
+  { to: '/admin/quotations', label: 'Quotations', slug: 'quotations' },
+  { to: '/admin/sourcing', label: 'Sourcing Requests', slug: 'sourcing' },
+  { to: '/admin/payments', label: 'Payments', slug: 'payments' },
+  { to: '/admin/procurement', label: 'Procurement', slug: 'procurement' },
+  { to: '/admin/shipments', label: 'Shipments', slug: 'shipments' },
+  { to: '/admin/deliveries', label: 'Deliveries', slug: 'deliveries' },
+  { to: '/admin/staff', label: 'Staff & RBAC', slug: 'staff' },
+  { to: '/admin/reports', label: 'Reports', slug: 'reports' },
+  { to: '/admin/audit-logs', label: 'Audit Logs', slug: 'audit-logs' },
+  { to: '/admin/settings', label: 'Settings', slug: 'settings' },
 ] as const;
+
+export function getAdminNavForRole(
+  role: RoleSlug | null | undefined,
+  authorizedModules?: readonly string[],
+): readonly PortalNavItem[] {
+  return ADMIN_PORTAL_NAV.filter((item) =>
+    canAccessAdminModule(role, item.slug, authorizedModules),
+  );
+}
 
 export interface AdminModuleSpec {
   slug: string;

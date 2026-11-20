@@ -24,7 +24,7 @@ export interface CurrencyConfig {
   code: CurrencyCode;
   name: string;
   symbol: string;
-  /** Illustrative demonstration rate to NGN until live Finance Manager rate table is connected */
+  /** Reference display conversion rate to NGN */
   referenceRateToNgn: number;
 }
 
@@ -80,6 +80,73 @@ export interface NigerianState {
   isPriorityHub?: boolean;
 }
 
+export interface LiveNigerianState {
+  id: string;
+  code: string;
+  name: string;
+  geopolitical_zone: string;
+  is_fct: boolean;
+  is_priority_hub: boolean;
+  base_delivery_fee_ngn: number | null;
+  estimated_transit_days: number | null;
+}
+
+export interface StorefrontCategory {
+  id: string;
+  parentId: string | null;
+  slug: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+}
+
+export interface StorefrontProductMedia {
+  url: string;
+  altText: string | null;
+  isPrimary: boolean;
+  sortOrder: number;
+}
+
+export interface StorefrontProduct {
+  id: string;
+  sku: string;
+  slug: string;
+  name: string;
+  categoryId: string | null;
+  categorySlug: string;
+  categoryName: string;
+  fulfillmentMode: FulfillmentMode;
+  baseCurrency: CurrencyCode;
+  basePrice: number;
+  priceNgn: number;
+  shippingMethod: ShippingMethod;
+  moq: number;
+  description: string;
+  specsJson: Record<string, unknown>;
+  estimatedWeightKg: number | null;
+  estimatedVolumeCbm: number | null;
+  isFeatured: boolean;
+  media: StorefrontProductMedia[];
+  primaryImageUrl: string | null;
+  primaryImageAlt: string;
+  brand: string | null;
+  subcategory: string | null;
+  availabilityLabel: string;
+}
+
+export interface PublicPlatformConfig {
+  platform: string;
+  tagline: string;
+  supportedCurrencies: CurrencyCode[];
+  paymentMethods: string[];
+  integrations: {
+    supabaseConfigured: boolean;
+    cloudinaryConfigured: boolean;
+    resendConfigured: boolean;
+    whatsappConfigured: boolean;
+  };
+}
+
 export interface ProductCategory {
   slug: string;
   name: string;
@@ -95,9 +162,7 @@ export interface DemoProduct {
   categorySlug: string;
   categoryName: string;
   fulfillmentMode: FulfillmentMode;
-  /** Demonstration price in NGN */
   demoPriceNgn: number;
-  /** Demonstration reference price in CNY (for supplier/trade context) */
   demoReferenceCny: number;
   moq: number;
   shippingMethod: ShippingMethod;
@@ -111,7 +176,7 @@ export interface DemoProduct {
 }
 
 export interface CartItem {
-  product: DemoProduct;
+  product: StorefrontProduct;
   quantity: number;
 }
 

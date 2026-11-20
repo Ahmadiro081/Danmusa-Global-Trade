@@ -37,16 +37,16 @@ export class ErrorBoundary extends Component<
   public render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-          <div className="max-w-md w-full rounded-lg border border-slate-200 bg-white p-8 text-center space-y-4">
-            <p className="font-mono text-xs font-semibold text-red-700">
+        <div className="flex min-h-screen items-center justify-center bg-[#F5F7FA] px-4">
+          <div className="w-full max-w-md space-y-4 rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+            <p className="font-mono text-xs font-semibold uppercase tracking-wider text-[#DC2626]">
               Application Error
             </p>
-            <h1 className="font-display text-xl font-bold text-[#0B1E3D]">
+            <h1 className="font-display text-xl font-extrabold text-[#10243A]">
               Something went wrong
             </h1>
-            <p className="text-sm text-slate-600">{this.state.errorMessage}</p>
-            <div className="pt-2 flex justify-center gap-3">
+            <p className="text-sm text-[#64748B]">{this.state.errorMessage}</p>
+            <div className="flex justify-center gap-3 pt-2">
               <Button variant="primary" onClick={this.handleReset}>
                 Retry View
               </Button>

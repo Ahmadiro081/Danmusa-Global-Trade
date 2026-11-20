@@ -601,6 +601,26 @@ export function createAdminRouter(
     },
   );
 
+  router.get(
+    '/procurement',
+    requireVerifiedRole(
+      ['super_admin', 'admin', 'sourcing_manager', 'finance_manager'],
+      authResolver,
+    ),
+    async (_req, res) => {
+      const supabase = authResolver.getAdminClient()!;
+      const { data, error } = await supabase
+        .from('procurement_orders')
+        .select('*, suppliers(name, city_china), orders(order_number)')
+        .order('created_at', { ascending: false });
+      if (error) {
+        res.status(500).json({ error: 'Failed to load procurement orders' });
+        return;
+      }
+      res.json({ procurementOrders: data ?? [] });
+    },
+  );
+
   router.post(
     '/procurement',
     sourcingGuard,
@@ -665,6 +685,19 @@ export function createAdminRouter(
       res.json({ shipment: data });
     },
   );
+
+  router.get('/deliveries/states', logisticsGuard, async (_req, res) => {
+    const supabase = authResolver.getAdminClient()!;
+    const { data, error } = await supabase
+      .from('nigerian_states')
+      .select('id, code, name, geopolitical_zone, is_fct, is_priority_hub, base_delivery_fee_ngn, estimated_transit_days, is_active')
+      .order('name', { ascending: true });
+    if (error) {
+      res.status(500).json({ error: 'Failed to load Nigerian delivery states' });
+      return;
+    }
+    res.json({ states: data ?? [] });
+  });
 
   router.patch(
     '/deliveries/states/:id',
@@ -879,6 +912,38 @@ export function createAdminRouter(
         return;
       }
       res.json({ auditLogs: data ?? [] });
+    },
+  );
+
+  // System Configuration & Multi-Currency Rates (Super Admin & Finance Manager)
+  router.get(
+    '/settings',
+    requireVerifiedRole(['super_admin', 'finance_manager'], authResolver),
+    async (_req, res) => {
+      const supabase = authResolver.getAdminClient()!;
+      const [currenciesRes, ratesRes, settingsRes] = await Promise.all([
+        supabase.from('currencies').select('*').order('code', { ascending: true }),
+        supabase
+          .from('exchange_rates')
+          .select('*')
+          .order('effective_from', { ascending: false })
+          .limit(20),
+        supabase
+          .from('system_settings')
+          .select('key, value_json, updated_at')
+          .order('key', { ascending: true }),
+      ]);
+
+      if (currenciesRes.error || ratesRes.error || settingsRes.error) {
+        res.status(500).json({ error: 'Failed to load system settings' });
+        return;
+      }
+
+      res.json({
+        currencies: currenciesRes.data ?? [],
+        exchangeRates: ratesRes.data ?? [],
+        settings: settingsRes.data ?? [],
+      });
     },
   );
 

@@ -1,54 +1,49 @@
 interface BrandLogoProps {
+  variant?: 'dark' | 'light';
+  showTagline?: boolean;
   compact?: boolean;
-  inverted?: boolean;
 }
 
-/**
- * Temporary corporate SVG emblem + wordmark for Danmusa Global Trade (DGT).
- * Designed to be swapped for the official company logo asset once finalized.
- */
-export function BrandLogo({ compact = false, inverted = false }: BrandLogoProps) {
-  const textColor = inverted ? 'text-white' : 'text-[#0B1E3D]';
-  const accentColor = '#C59B27';
+export function BrandLogo({
+  variant = 'dark',
+  showTagline = false,
+  compact = false,
+}: BrandLogoProps) {
+  const isLight = variant === 'light';
 
   return (
-    <span className={`inline-flex items-center gap-2.5 whitespace-nowrap shrink-0 ${textColor}`}>
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 32 32"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+    <div className="inline-flex items-center gap-3 select-none">
+      <div
+        className={`relative flex shrink-0 items-center justify-center rounded-lg font-display font-extrabold tracking-tight ${
+          compact ? 'h-9 w-9 text-sm' : 'h-10 w-10 text-base'
+        } ${
+          isLight
+            ? 'bg-white text-[#10243A] ring-1 ring-white/20'
+            : 'bg-[#10243A] text-white'
+        }`}
         aria-hidden="true"
-        className="shrink-0"
       >
-        <rect
-          x="1"
-          y="1"
-          width="30"
-          height="30"
-          rx="6"
-          fill={inverted ? '#15315E' : '#0B1E3D'}
-          stroke={accentColor}
-          strokeWidth="1.5"
-        />
-        <path
-          d="M8 10H15.5C19.0899 10 22 12.6863 22 16C22 19.3137 19.0899 22 15.5 22H8V10Z"
-          stroke="#FFFFFF"
-          strokeWidth="2"
-        />
-        <path d="M12 16H24" stroke={accentColor} strokeWidth="2" strokeLinecap="round" />
-        <path
-          d="M21 13L24.5 16L21 19"
-          stroke={accentColor}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <span className="font-display text-base font-bold tracking-tight whitespace-nowrap shrink-0">
-        {compact ? 'DGT' : 'Danmusa Global Trade'}
-      </span>
-    </span>
+        <span>DGT</span>
+        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-sm bg-[#F4A62A] ring-2 ring-white" />
+      </div>
+      <div className="leading-tight">
+        <div
+          className={`font-display font-bold tracking-tight ${
+            compact ? 'text-[15px]' : 'text-base sm:text-[17px]'
+          } ${isLight ? 'text-white' : 'text-[#10243A]'}`}
+        >
+          Danmusa Global Trade
+        </div>
+        {showTagline && (
+          <div
+            className={`text-[11px] font-medium tracking-wide ${
+              isLight ? 'text-slate-300' : 'text-[#64748B]'
+            }`}
+          >
+            China-to-Nigeria Trade Partner
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,57 +1,49 @@
-import { Package } from 'lucide-react';
 import { useState } from 'react';
+import { Package } from 'lucide-react';
 
 interface ProductImageProps {
   src: string | null;
   alt: string;
-  categoryLabel?: string;
-  aspectRatio?: '4/3' | '16/9' | '1/1';
+  aspectClass?: string;
   className?: string;
+  priority?: boolean;
 }
-
-const ASPECT_CLASS = {
-  '4/3': 'aspect-[4/3]',
-  '16/9': 'aspect-[16/9]',
-  '1/1': 'aspect-square',
-} as const;
 
 export function ProductImage({
   src,
   alt,
-  categoryLabel = 'DGT Catalogue',
-  aspectRatio = '4/3',
+  aspectClass = 'aspect-[4/3]',
   className = '',
+  priority = false,
 }: ProductImageProps) {
   const [hasError, setHasError] = useState(false);
 
   if (!src || hasError) {
     return (
       <div
-        className={`${ASPECT_CLASS[aspectRatio]} w-full overflow-hidden rounded-md bg-slate-100 border border-slate-200 flex flex-col items-center justify-center p-6 text-center ${className}`}
+        className={`flex flex-col items-center justify-center bg-[#F5F7FA] text-[#64748B] ${aspectClass} ${className}`}
         role="img"
         aria-label={alt}
       >
-        <div className="w-10 h-10 rounded-md bg-[#0B1E3D]/10 text-[#0B1E3D] flex items-center justify-center mb-3">
-          <Package className="w-5 h-5" aria-hidden="true" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-[#10243A] ring-1 ring-slate-200">
+          <Package className="h-5 w-5" />
         </div>
-        <span className="text-xs font-medium text-slate-600">{categoryLabel}</span>
-        <span className="mt-1 text-[11px] text-slate-400">
-          Product imagery pending upload
+        <span className="mt-2.5 text-[11px] font-medium text-[#64748B]">
+          Product image pending
         </span>
       </div>
     );
   }
 
   return (
-    <div
-      className={`${ASPECT_CLASS[aspectRatio]} w-full overflow-hidden rounded-md bg-slate-100 ${className}`}
-    >
+    <div className={`relative overflow-hidden bg-[#F5F7FA] ${aspectClass} ${className}`}>
       <img
         src={src}
         alt={alt}
-        referrerPolicy="no-referrer"
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
         onError={() => setHasError(true)}
-        className="h-full w-full object-cover transition-transform duration-200"
+        className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.03]"
       />
     </div>
   );

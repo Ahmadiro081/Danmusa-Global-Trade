@@ -1,30 +1,60 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Typography */
+  --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-dgt-navy: #0B1E3D;
-  --color-dgt-navy-light: #15315E;
-  --color-dgt-navy-deep: #071429;
-  --color-dgt-gold: #C59B27;
-  --color-dgt-gold-dark: #8E6B0C;
-  --color-dgt-gold-soft: #F7F1DF;
+  /* Brand & Semantic Colour Tokens */
+  --color-dgt-navy: #10243A;
+  --color-dgt-navy-light: #1A3554;
+  --color-dgt-navy-deep: #0B1929;
+  --color-dgt-blue: #2563EB;
+  --color-dgt-blue-hover: #1D4ED8;
+  --color-dgt-blue-soft: #EFF6FF;
+  --color-dgt-amber: #F4A62A;
+  --color-dgt-amber-dark: #B45309;
+  --color-dgt-amber-soft: #FEF7E7;
+
+  /* Neutrals */
+  --color-dgt-white: #FFFFFF;
+  --color-dgt-bg: #F5F7FA;
+  --color-dgt-text: #202B38;
+  --color-dgt-muted: #64748B;
+  --color-dgt-border: #E2E8F0;
+
+  /* Semantic Status */
+  --color-dgt-success: #16865C;
+  --color-dgt-warning: #D97706;
+  --color-dgt-danger: #DC2626;
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
+    color: var(--color-dgt-text);
+    background-color: var(--color-dgt-bg);
     scroll-behavior: smooth;
+    overflow-x: clip;
+  }
+
+  body {
+    overflow-x: clip;
   }
 
   h1, h2, h3, h4, .font-display {
     font-family: var(--font-display);
+    letter-spacing: -0.02em;
   }
 
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
   }
 }
 

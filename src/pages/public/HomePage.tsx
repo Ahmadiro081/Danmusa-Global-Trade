@@ -1,438 +1,696 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  Building2,
   CheckCircle2,
-  PackageSearch,
+  Clock,
+  FileText,
+  Globe2,
+  Headphones,
+  Layers,
+  Mail,
+  MapPin,
+  Package,
+  Phone,
   Search,
-  Ship,
   ShieldCheck,
+  Ship,
+  Truck,
 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ProductCard } from '../../components/catalogue/ProductCard';
 import { Button } from '../../components/ui/Button';
+import { ProductCard } from '../../components/catalogue/ProductCard';
 import {
-  DGT_BRAND,
-  INTERNATIONAL_LOGISTICS_STAGES,
-} from '../../config/app.config';
+  EmptyState,
+  ErrorBanner,
+  ProductGridSkeleton,
+} from '../../components/ui/StateViews';
+import { StatusBadge } from '../../components/ui/Badge';
+import { DGT_BRAND } from '../../config/app.config';
 import {
-  DEMO_CATEGORIES,
-  DEMO_PRODUCTS,
-  HERO_LOGISTICS_IMAGE,
-} from '../../data/demoCatalogue';
+  HERO_SHOWCASE_IMAGE,
+  STOREFRONT_CATEGORY_DIRECTORY,
+  WHOLESALE_BANNER_IMAGE,
+} from '../../config/categories';
+import { fetchPublicProducts } from '../../services/catalogueService';
+import type { StorefrontProduct } from '../../types/domain';
 
-type HomeFilter = 'all' | 'ready_stock' | 'pre_order';
+const WHY_CHOOSE_PILLARS = [
+  {
+    icon: Globe2,
+    title: 'China-to-Nigeria Sourcing',
+    description:
+      'Direct commercial procurement channels connecting verified manufacturers and suppliers in China with buyers across Nigeria.',
+  },
+  {
+    icon: Building2,
+    title: 'Competitive Wholesale Procurement',
+    description:
+      'Structured bulk pricing for traders, retailers, corporate buyers, and institutions sourcing stock at scale.',
+  },
+  {
+    icon: Layers,
+    title: 'Broad Product Variety',
+    description:
+      'Spanning cars, trucks, smartphones, electronics, computers, kitchen appliances, fashion, footwear, and sportswear.',
+  },
+  {
+    icon: FileText,
+    title: 'Transparent Quotations',
+    description:
+      'Itemized quotations detailing unit costs, shipping calculations, and delivery timelines prior to order confirmation.',
+  },
+  {
+    icon: Ship,
+    title: 'Structured Order Tracking',
+    description:
+      'Clear milestone visibility from supplier procurement in China through customs clearance and local dispatch in Nigeria.',
+  },
+  {
+    icon: Headphones,
+    title: 'Dedicated Customer Support',
+    description:
+      'Responsive trade support assisting customers with product specifications, quotations, and post-order enquiries.',
+  },
+] as const;
+
+const HOW_IT_WORKS_STEPS = [
+  {
+    step: '01',
+    title: 'Browse or Request Products',
+    description:
+      'Explore ready-stock listings or submit a custom wholesale sourcing request with your target item specifications.',
+  },
+  {
+    step: '02',
+    title: 'Receive Quotation',
+    description:
+      'Our sourcing and operations team confirms availability, pricing, and freight options in a formal quotation.',
+  },
+  {
+    step: '03',
+    title: 'Confirm Your Order',
+    description:
+      'Approve your quotation or checkout ready-stock items and complete settlement via verified bank transfer.',
+  },
+  {
+    step: '04',
+    title: 'Procurement and Shipping',
+    description:
+      'DGT manages supplier inspection, consolidation in China, international air or sea freight, and customs clearance.',
+  },
+  {
+    step: '05',
+    title: 'Delivery',
+    description:
+      'Receive your shipment at your Nigerian destination across Katsina, Abuja, Kano, Lagos, and all 36 states + FCT.',
+  },
+] as const;
 
 export function HomePage() {
-  const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<HomeFilter>('all');
+  const [products, setProducts] = useState<StorefrontProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSearchSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = searchQuery.trim();
-    navigate(trimmed ? `/catalogue?q=${encodeURIComponent(trimmed)}` : '/catalogue');
+  const loadProducts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPublicProducts();
+      setProducts(data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to load products from the live catalogue.',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const featuredProducts = DEMO_PRODUCTS.filter((product) => {
-    if (activeFilter === 'all') return product.isFeatured;
-    return product.fulfillmentMode === activeFilter;
-  }).slice(0, 6);
+  useEffect(() => {
+    void loadProducts();
+  }, []);
+
+  const featuredProducts = products
+    .filter((p) => p.isFeatured)
+    .slice(0, 4);
+  const displayFeatured =
+    featuredProducts.length > 0 ? featuredProducts : products.slice(0, 4);
+
+  const readyStockProducts = products
+    .filter((p) => p.fulfillmentMode === 'ready_stock')
+    .slice(0, 4);
+
+  const preOrderProducts = products
+    .filter((p) => p.fulfillmentMode === 'pre_order')
+    .slice(0, 4);
 
   return (
-    <div>
-      {/* 1. Storefront Hero Section */}
-      <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-          <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-stretch">
-            <div className="flex flex-col justify-center space-y-6 lg:col-span-6">
-              <p className="text-xs font-semibold tracking-wide text-[#8E6B0C]">
-                {DGT_BRAND.name} ({DGT_BRAND.shortName}) · China-to-Nigeria Trade
-              </p>
+    <div className="bg-[#F5F7FA]">
+      {/* SECTION A: HERO */}
+      <section className="relative overflow-hidden bg-[#10243A] text-white">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-20"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 80% 25%, #2563EB 0%, transparent 48%)',
+          }}
+          aria-hidden="true"
+        />
 
-              <h1
-                className="font-display text-3xl font-bold tracking-tight text-[#0B1E3D] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.12]"
-                style={{ textWrap: 'balance' }}
-              >
-                {DGT_BRAND.tagline}
+        <div className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+          <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-12">
+            {/* Editorial Copy Column */}
+            <div className="space-y-6 lg:col-span-6">
+              <div className="inline-flex items-center gap-2 border-l-2 border-[#F4A62A] pl-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#F4A62A]">
+                Danmusa Global Trade · China — Nigeria
+              </div>
+
+              <h1 className="font-display text-3xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-4xl lg:text-[46px]">
+                Everything You Need. Sourced Globally. Delivered with Confidence.
               </h1>
 
-              <p className="max-w-xl text-base leading-relaxed text-slate-600">
-                Direct procurement, fixed-price ready-stock inventory, quotation-backed
-                pre-orders, and custom wholesale sourcing from China with nationwide
-                delivery across Katsina, Northern Nigeria, and all 36 states plus the FCT.
+              <p className="max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">
+                Discover quality products from China, competitive wholesale prices and reliable sourcing solutions for customers across Nigeria.
               </p>
 
-              {/* Integrated Product Search Bar */}
-              <form
-                onSubmit={handleSearchSubmit}
-                className="flex flex-col gap-2.5 sm:flex-row sm:items-center max-w-xl"
-                role="search"
-                aria-label="Search DGT catalogue"
-              >
-                <div className="relative flex-1">
-                  <Search
-                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search vehicles, smartphones, laptops, appliances..."
-                    className="w-full min-h-[44px] rounded-md border border-slate-300 bg-white pl-10 pr-4 text-sm text-[#0B1E3D] placeholder:text-slate-400 focus:border-[#0B1E3D] focus:outline-none focus:ring-2 focus:ring-[#0B1E3D]/15"
-                  />
-                </div>
-                <Button type="submit" variant="primary" size="lg">
-                  Search Catalogue
-                </Button>
-              </form>
-
-              <div className="flex flex-wrap items-center gap-4 pt-1">
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
                 <Link to="/catalogue">
-                  <Button variant="accent" size="md">
-                    Browse Demonstration Catalogue
-                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  <Button variant="primary" size="lg" className="w-full sm:w-auto">
+                    Explore Products
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Link
-                  to="/sourcing"
-                  className="text-sm font-semibold text-[#0B1E3D] hover:text-[#8E6B0C] transition-colors whitespace-nowrap"
-                >
-                  Request Custom China Sourcing
+                <Link to="/sourcing">
+                  <Button variant="accent" size="lg" className="w-full sm:w-auto">
+                    Request Wholesale Sourcing
+                  </Button>
                 </Link>
               </div>
-            </div>
 
-            <div className="lg:col-span-6 flex">
-              <div className="relative w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                <img
-                  src={HERO_LOGISTICS_IMAGE}
-                  alt="International container port and freight logistics corridor connecting China and Nigeria"
-                  referrerPolicy="no-referrer"
-                  className="h-full w-full min-h-[280px] object-cover"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0B1E3D]/90 via-[#0B1E3D]/45 to-transparent p-6 text-white">
-                  <p className="text-xs font-medium text-[#C59B27]">
-                    China Export Consolidation · Nigerian Delivery Network
+              {/* Clean Architectural Value Strip */}
+              <div className="grid grid-cols-3 gap-4 border-t border-white/15 pt-6 text-xs">
+                <div>
+                  <p className="font-display text-base font-bold text-white sm:text-lg">
+                    8+ Categories
                   </p>
-                  <p className="mt-1 text-sm font-medium text-white">
-                    Structured ready-stock fulfillment and transparent 10-stage freight
-                    tracking.
+                  <p className="mt-0.5 text-slate-400">Vehicles to electronics</p>
+                </div>
+                <div>
+                  <p className="font-display text-base font-bold text-white sm:text-lg">
+                    36 States + FCT
                   </p>
+                  <p className="mt-0.5 text-slate-400">Nationwide delivery</p>
+                </div>
+                <div>
+                  <p className="font-display text-base font-bold text-white sm:text-lg">
+                    Direct China
+                  </p>
+                  <p className="mt-0.5 text-slate-400">Wholesale &amp; pre-order</p>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* 4-Column Trade Pillar Strip below Hero */}
-          <div className="mt-12 grid grid-cols-1 gap-6 border-t border-slate-200 pt-8 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <p className="font-display text-sm font-semibold text-[#0B1E3D]">
-                01. Ready-Stock Storefront
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                Fixed Nigerian Naira pricing for verified local inventory ready for
-                dispatch.
-              </p>
-            </div>
-            <div>
-              <p className="font-display text-sm font-semibold text-[#0B1E3D]">
-                02. Pre-Order Quotations
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                Supplier cost assessment in CNY, shipping calculation, and formal customer
-                quotes.
-              </p>
-            </div>
-            <div>
-              <p className="font-display text-sm font-semibold text-[#0B1E3D]">
-                03. Custom Wholesale Sourcing
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                Submit product specifications or reference photographs for unlisted Chinese
-                goods.
-              </p>
-            </div>
-            <div>
-              <p className="font-display text-sm font-semibold text-[#0B1E3D]">
-                04. 36 States + FCT Delivery
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                Nationwide coverage with dedicated operational focus on Katsina State and
-                Northern Nigeria.
-              </p>
+            {/* Premium Studio Showcase Visual */}
+            <div className="lg:col-span-6">
+              <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-[#0B1929] shadow-2xl">
+                <img
+                  src={HERO_SHOWCASE_IMAGE}
+                  alt="Premium imported vehicle showcase by Danmusa Global Trade"
+                  className="aspect-[16/10] w-full object-cover object-center"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#10243A] via-[#10243A]/75 to-transparent p-5 sm:p-6">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#F4A62A]">
+                        Global Import &amp; Ready Stock
+                      </p>
+                      <p className="mt-0.5 font-display text-sm font-bold text-white sm:text-base">
+                        Vehicles, Smartphones, Electronics, Home &amp; Fashion
+                      </p>
+                    </div>
+                    <Link
+                      to="/catalogue?category=cars-vehicles"
+                      className="inline-flex items-center gap-1 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-xs transition-colors hover:bg-white/25"
+                    >
+                      Vehicles
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 2. Product Categories & Featured Demonstration Catalogue */}
-      <section className="border-b border-slate-200 bg-slate-50 py-14">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
-          {/* Categories Index */}
+      {/* SECTION B: PRODUCT CATEGORIES */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
+              Product Categories
+            </p>
+            <h2 className="mt-1.5 font-display text-2xl font-extrabold text-[#10243A] sm:text-3xl">
+              Explore Our International Trade Catalogue
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm text-[#64748B]">
+              Browse eight structured product divisions spanning automotive, mobile devices, electronics, home appliances, and fashion.
+            </p>
+          </div>
+          <Link
+            to="/catalogue"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#2563EB] hover:underline"
+          >
+            View full catalogue
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {STOREFRONT_CATEGORY_DIRECTORY.map((category) => (
+            <Link
+              key={category.slug}
+              to={`/catalogue?category=${category.slug}`}
+              className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:border-[#2563EB]/40 hover:shadow-md"
+            >
+              <div className="relative aspect-[4/3] overflow-hidden bg-[#F5F7FA]">
+                <img
+                  src={category.imageUrl}
+                  alt={category.imageAlt}
+                  loading="lazy"
+                  className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.04]"
+                />
+              </div>
+              <div className="flex flex-1 flex-col justify-between p-4">
+                <div>
+                  <h3 className="font-display text-base font-bold text-[#10243A] group-hover:text-[#2563EB]">
+                    {category.name}
+                  </h3>
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[#64748B]">
+                    {category.shortDescription}
+                  </p>
+                </div>
+                <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB]">
+                  Browse category
+                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* SECTION C: FEATURED PRODUCTS (LIVE BACKEND DATA) */}
+      <section className="border-y border-slate-200/90 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
+                Featured Inventory
+              </p>
+              <h2 className="mt-1.5 font-display text-2xl font-extrabold text-[#10243A] sm:text-3xl">
+                Featured Products
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-[#64748B]">
+                Live listings published by Danmusa Global Trade product management. Prices display in Nigerian Naira with currency conversion options.
+              </p>
+            </div>
+            <Link
+              to="/catalogue"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#2563EB] hover:underline"
+            >
+              Shop all products
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="mt-8">
+            {loading ? (
+              <ProductGridSkeleton count={4} />
+            ) : error ? (
+              <ErrorBanner
+                title="Unable to load live catalogue"
+                message={error}
+                action={
+                  <Button variant="outline" size="sm" onClick={loadProducts}>
+                    Retry
+                  </Button>
+                }
+              />
+            ) : displayFeatured.length === 0 ? (
+              <EmptyState
+                icon={<Package className="h-5 w-5" />}
+                title="Live catalogue inventory is being prepared"
+                description="No products are currently published in the live storefront database. You can submit a custom sourcing request for any product from China and our team will prepare a formal quotation."
+                action={
+                  <>
+                    <Link to="/sourcing">
+                      <Button variant="primary" size="sm">
+                        Request Wholesale Sourcing
+                      </Button>
+                    </Link>
+                    <Link to="/contact">
+                      <Button variant="outline" size="sm">
+                        Contact Sales Team
+                      </Button>
+                    </Link>
+                  </>
+                }
+              />
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {displayFeatured.map((product) => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION D & E: READY STOCK & PRE-ORDER PRODUCTS */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="space-y-14">
+          {/* D: Ready Stock */}
+          <div>
+            <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end">
               <div>
-                <h2 className="font-display text-2xl font-bold text-[#0B1E3D]">
-                  Core Trade Categories
+                <StatusBadge tone="success">Immediate Local Availability</StatusBadge>
+                <h2 className="mt-2 font-display text-2xl font-extrabold text-[#10243A]">
+                  Ready Stock
                 </h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Consumer electronics, commercial vehicles, appliances, and apparel
-                  sourced directly from verified factories.
+                <p className="mt-1.5 max-w-2xl text-sm text-[#64748B]">
+                  Products stocked in Nigeria and ready for direct order confirmation and nationwide dispatch.
                 </p>
               </div>
               <Link
-                to="/catalogue"
-                className="text-sm font-semibold text-[#0B1E3D] hover:text-[#8E6B0C] whitespace-nowrap"
+                to="/catalogue?mode=ready_stock"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#16865C] hover:underline"
               >
-                View Full Catalogue →
+                Explore ready stock
+                <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
 
-            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {DEMO_CATEGORIES.map((category) => (
-                <Link
-                  key={category.slug}
-                  to={`/catalogue?category=${encodeURIComponent(category.slug)}`}
-                  className="rounded-lg border border-slate-200 bg-white p-5 transition-colors duration-150 hover:border-[#0B1E3D]"
-                >
-                  <p className="text-xs text-slate-500">{category.productCountLabel}</p>
-                  <h3 className="mt-1 font-display text-base font-semibold text-[#0B1E3D]">
-                    {category.name}
-                  </h3>
-                  <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                    {category.summary}
-                  </p>
-                </Link>
-              ))}
+            <div className="mt-6">
+              {loading ? (
+                <ProductGridSkeleton count={4} />
+              ) : readyStockProducts.length > 0 ? (
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                  {readyStockProducts.map((product) => (
+                    <ProductCard key={product.id} product={product} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-6 sm:flex-row sm:items-center">
+                  <div className="flex items-start gap-3.5">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#16865C]/10 text-[#16865C]">
+                      <CheckCircle2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-[#10243A]">
+                        Ready-stock listings update as warehouse inventory is published
+                      </h3>
+                      <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+                        New ready-stock vehicles, electronics, and appliances appear here automatically once verified by DGT inventory managers.
+                      </p>
+                    </div>
+                  </div>
+                  <Link to="/catalogue?mode=ready_stock" className="shrink-0">
+                    <Button variant="outline" size="sm">
+                      Check Ready Stock
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Featured / Ready-Stock / Pre-Order Switchable Grid */}
-          <div className="pt-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* E: Pre-Order Products */}
+          <div>
+            <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end">
               <div>
-                <h2 className="font-display text-2xl font-bold text-[#0B1E3D]">
-                  Featured Demonstration Products
+                <StatusBadge tone="warning">Direct Import from China</StatusBadge>
+                <h2 className="mt-2 font-display text-2xl font-extrabold text-[#10243A]">
+                  Pre-Order Products
                 </h2>
-                <p className="mt-1 text-xs text-slate-600">
-                  Sample listings illustrating ready-stock fixed pricing and pre-order
-                  quotation workflows. Live stock connects in Stage 2.
+                <p className="mt-1.5 max-w-2xl text-sm text-[#64748B]">
+                  Order specialized vehicles, bulk smartphones, commercial equipment, or factory-direct goods sourced on request from China with transparent lead times.
                 </p>
               </div>
-
-              <div
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 self-start"
-                role="tablist"
-                aria-label="Filter demonstration products"
+              <Link
+                to="/catalogue?mode=pre_order"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#B45309] hover:underline"
               >
-                {(
-                  [
-                    { key: 'all', label: 'Featured' },
-                    { key: 'ready_stock', label: 'Ready-Stock' },
-                    { key: 'pre_order', label: 'Pre-Order' },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeFilter === tab.key}
-                    onClick={() => setActiveFilter(tab.key)}
-                    className={`rounded-md px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                      activeFilter === tab.key
-                        ? 'bg-[#0B1E3D] text-white'
-                        : 'text-slate-600 hover:text-[#0B1E3D]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+                Explore pre-orders
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
 
-            <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {featuredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
+            <div className="mt-6">
+              {loading ? (
+                <ProductGridSkeleton count={4} />
+              ) : preOrderProducts.length > 0 ? (
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                  {preOrderProducts.map((product) => (
+                    <ProductCard key={product.id} product={product} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-start justify-between gap-4 rounded-xl border border-[#F4A62A]/35 bg-[#FEF7E7]/65 p-6 sm:flex-row sm:items-center">
+                  <div className="flex items-start gap-3.5">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F4A62A]/20 text-[#92400E]">
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-[#10243A]">
+                        Import any product on pre-order directly from China
+                      </h3>
+                      <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+                        Pre-order listings allow buyers to reserve high-value items or custom configurations sourced from verified Chinese suppliers with tracked air or sea freight to Nigeria.
+                      </p>
+                    </div>
+                  </div>
+                  <Link to="/sourcing" className="shrink-0">
+                    <Button variant="navy" size="sm">
+                      Submit Pre-Order Request
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      {/* 3. Wholesale Sourcing, How It Works & China-to-Nigeria Logistics */}
-      <section className="border-b border-slate-200 bg-white py-14">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-14">
-          {/* How It Works across 3 Business Workflows */}
-          <div>
-            <h2 className="font-display text-2xl font-bold text-[#0B1E3D]">
-              How DGT Trade Workflows Operate
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Transparent commercial pathways for individual buyers, retail merchants, and
-              institutional importers.
-            </p>
-
-            <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-white p-6">
-                <CheckCircle2 className="w-6 h-6 text-[#0B1E3D]" aria-hidden="true" />
-                <h3 className="mt-4 font-display text-lg font-semibold text-[#0B1E3D]">
-                  Ready-Stock Purchase
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Browse stocked inventory → Add to bag → Checkout in NGN → Submit
-                  bank transfer for Finance Manager verification → Order dispatch to
-                  your Nigerian state.
-                </p>
-                <div className="mt-5">
-                  <Link
-                    to="/catalogue?mode=ready_stock"
-                    className="text-xs font-semibold text-[#0B1E3D] hover:text-[#8E6B0C]"
-                  >
-                    View Ready-Stock Demo Items →
-                  </Link>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-white p-6">
-                <Ship className="w-6 h-6 text-[#0B1E3D]" aria-hidden="true" />
-                <h3 className="mt-4 font-display text-lg font-semibold text-[#0B1E3D]">
-                  Pre-Order Procurement
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Select pre-order item → Request formal quotation → Supplier CNY cost &
-                  freight calculation → Accept quote & pay → China procurement & 10-stage
-                  shipment tracking.
-                </p>
-                <div className="mt-5">
-                  <Link
-                    to="/catalogue?mode=pre_order"
-                    className="text-xs font-semibold text-[#0B1E3D] hover:text-[#8E6B0C]"
-                  >
-                    View Pre-Order Demo Items →
-                  </Link>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-white p-6">
-                <PackageSearch className="w-6 h-6 text-[#0B1E3D]" aria-hidden="true" />
-                <h3 className="mt-4 font-display text-lg font-semibold text-[#0B1E3D]">
-                  Custom Wholesale Sourcing
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Submit description & reference photo → DGT Sourcing Team investigates
-                  factories in China → Formal quotation issued → Customer approval →
-                  End-to-end delivery.
-                </p>
-                <div className="mt-5">
-                  <Link
-                    to="/sourcing"
-                    className="text-xs font-semibold text-[#0B1E3D] hover:text-[#8E6B0C]"
-                  >
-                    Open Sourcing Request Form →
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* China-to-Nigeria 10-Stage Logistics & Wholesale CTA */}
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start">
-            <div className="rounded-lg border border-slate-200 bg-[#0B1E3D] p-8 text-white lg:col-span-5">
-              <p className="text-xs font-semibold text-[#C59B27]">
-                Wholesale & Unlisted Goods
+      {/* SECTION F: WHOLESALE SOURCING BANNER */}
+      <section className="bg-[#10243A] text-white">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="grid items-center gap-10 lg:grid-cols-12">
+            <div className="space-y-5 lg:col-span-7">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#F4A62A]">
+                Wholesale &amp; Corporate Procurement
               </p>
-              <h3 className="mt-2 font-display text-2xl font-bold">
-                Need Products Not Listed in Our Catalogue?
-              </h3>
-              <p className="mt-3 text-sm leading-relaxed text-slate-300">
-                Submit target quantities, specifications, and reference photographs. Our
-                China sourcing specialists verify factory availability, calculate
-                weight/volume freight, and issue a structured NGN quotation.
+              <h2 className="font-display text-2xl font-extrabold leading-tight text-white sm:text-3xl lg:text-4xl">
+                Source Directly from Verified Suppliers in China for Your Business.
+              </h2>
+              <p className="max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
+                Whether you are stocking a retail store, procuring fleet vehicles, importing electronics in bulk, or sourcing custom commercial merchandise, DGT handles supplier verification, price negotiation, consolidation, and freight delivery to Nigeria.
               </p>
-              <div className="mt-6 flex flex-wrap gap-3">
+
+              <ul className="grid gap-3 pt-1 text-sm text-slate-200 sm:grid-cols-2">
+                <li className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#F4A62A]" />
+                  <span>Direct factory &amp; wholesale market sourcing</span>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#F4A62A]" />
+                  <span>Formal itemized NGN / USD / CNY quotations</span>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#F4A62A]" />
+                  <span>Air freight &amp; sea container consolidation</span>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#F4A62A]" />
+                  <span>Customs clearance &amp; 36-state delivery</span>
+                </li>
+              </ul>
+
+              <div className="flex flex-wrap gap-3 pt-2">
                 <Link to="/sourcing">
-                  <Button variant="accent">Submit Sourcing Request</Button>
+                  <Button variant="accent" size="lg">
+                    Request a Product from China
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
                 </Link>
                 <Link to="/logistics">
                   <Button
                     variant="outline"
-                    className="border-white/25 bg-transparent text-white hover:bg-white/10"
+                    size="lg"
+                    className="border-white/25 bg-transparent text-white hover:border-white hover:bg-white/10"
                   >
-                    Shipping Coverage
+                    View Shipping Process
                   </Button>
                 </Link>
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 sm:p-8 lg:col-span-7">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="font-display text-lg font-bold text-[#0B1E3D]">
-                    10-Stage China-to-Nigeria Logistics Pipeline
-                  </h3>
-                  <p className="text-xs text-slate-600">
-                    Tracked milestones from supplier procurement through customs release
-                    and Nigerian state delivery.
-                  </p>
+            <div className="lg:col-span-5">
+              <div className="overflow-hidden rounded-2xl border border-white/15 bg-[#0B1929]">
+                <img
+                  src={WHOLESALE_BANNER_IMAGE}
+                  alt="International freight and China-to-Nigeria container logistics"
+                  loading="lazy"
+                  className="aspect-[4/3] w-full object-cover object-center"
+                />
+                <div className="grid grid-cols-2 divide-x divide-white/10 border-t border-white/10 bg-[#0B1929] p-4 text-xs">
+                  <div className="pr-3">
+                    <p className="font-semibold text-[#F4A62A]">Origin Operations</p>
+                    <p className="mt-0.5 text-slate-300">China Consolidation Hub</p>
+                  </div>
+                  <div className="pl-3">
+                    <p className="font-semibold text-[#F4A62A]">Destination Coverage</p>
+                    <p className="mt-0.5 text-slate-300">All 36 Nigerian States &amp; FCT</p>
+                  </div>
                 </div>
-                <Link
-                  to="/logistics"
-                  className="text-xs font-semibold text-[#0B1E3D] hover:text-[#8E6B0C] whitespace-nowrap"
-                >
-                  View All 36 States + FCT →
-                </Link>
               </div>
-
-              <ol className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {INTERNATIONAL_LOGISTICS_STAGES.map((stage) => (
-                  <li
-                    key={stage.code}
-                    className="flex items-start gap-3 rounded-md border border-slate-200 bg-white px-3.5 py-2.5"
-                  >
-                    <span className="font-mono text-xs font-semibold text-[#8E6B0C] tabular-nums mt-0.5">
-                      {String(stage.step).padStart(2, '0')}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-[#0B1E3D]">{stage.label}</p>
-                      <p className="text-[11px] text-slate-500">{stage.region}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 4. Customer Support & Trust Verification */}
-      <section className="bg-slate-50 py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-lg border border-slate-200 bg-white p-6 sm:p-8 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4 max-w-2xl">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#0B1E3D] text-[#C59B27]">
-                <ShieldCheck className="w-5 h-5" aria-hidden="true" />
+      {/* SECTION G: WHY CHOOSE DGT? */}
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
+              Business Reliability
+            </p>
+            <h2 className="mt-1.5 font-display text-2xl font-extrabold text-[#10243A] sm:text-3xl">
+              Why Choose Danmusa Global Trade?
+            </h2>
+            <p className="mt-2 text-sm text-[#64748B]">
+              Built for transparent international trade between China and Nigeria with structured procurement, clear pricing, and end-to-end operational accountability.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-x-8 gap-y-8 border-t border-slate-200 pt-10 sm:grid-cols-2 lg:grid-cols-3">
+            {WHY_CHOOSE_PILLARS.map((pillar) => {
+              const Icon = pillar.icon;
+              return (
+                <div key={pillar.title} className="space-y-3">
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="font-display text-base font-bold text-[#10243A]">
+                    {pillar.title}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#64748B]">
+                    {pillar.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION H: HOW IT WORKS (5 STEPS) */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
+            Procurement &amp; Fulfillment Workflow
+          </p>
+          <h2 className="mt-1.5 font-display text-2xl font-extrabold text-[#10243A] sm:text-3xl">
+            How It Works
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-[#64748B]">
+            A straightforward five-stage trade workflow designed for individual buyers and wholesale importers alike.
+          </p>
+        </div>
+
+        <ol className="mt-10 grid gap-5 md:grid-cols-5">
+          {HOW_IT_WORKS_STEPS.map((item) => (
+            <li
+              key={item.step}
+              className="relative flex flex-col rounded-xl border border-slate-200 bg-white p-5"
+            >
+              <span className="font-mono text-xs font-bold text-[#2563EB]">
+                STEP {item.step}
+              </span>
+              <h3 className="mt-2 font-display text-sm font-bold text-[#10243A]">
+                {item.title}
+              </h3>
+              <p className="mt-2 text-xs leading-relaxed text-[#64748B]">
+                {item.description}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* SECTION I: TRUST AND SUPPORT */}
+      <section className="border-t border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <div className="grid gap-8 rounded-2xl border border-slate-200 bg-[#F5F7FA] p-6 sm:p-8 lg:grid-cols-12 lg:items-center">
+            <div className="space-y-3 lg:col-span-7">
+              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#10243A]">
+                <ShieldCheck className="h-4 w-4 text-[#16865C]" />
+                Trust &amp; Customer Support
               </div>
-              <div>
-                <h2 className="font-display text-lg font-bold text-[#0B1E3D]">
-                  Customer Support & Account Verification
-                </h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Dedicated support for quotation reviews, bank transfer verification, and
-                  Katsina / nationwide delivery updates. Official business telephone,
-                  WhatsApp Business line, and office addresses are reserved as placeholders
-                  pending official corporate entry.
-                </p>
+              <h2 className="font-display text-2xl font-extrabold text-[#10243A]">
+                Need assistance with an order, quotation, or shipment?
+              </h2>
+              <p className="max-w-xl text-sm leading-relaxed text-[#64748B]">
+                Our operations and customer support team is available to guide you through ready-stock availability, bulk quotations, bank transfer verification, and delivery scheduling across Nigeria.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Link to="/contact">
+                  <Button variant="primary" size="md">
+                    Contact Support
+                  </Button>
+                </Link>
+                <Link to="/account/tracking">
+                  <Button variant="outline" size="md">
+                    <Truck className="h-4 w-4" />
+                    Track an Order
+                  </Button>
+                </Link>
+                <Link to="/catalogue">
+                  <Button variant="ghost" size="md">
+                    <Search className="h-4 w-4" />
+                    Search Products
+                  </Button>
+                </Link>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3 shrink-0">
-              <Link to="/account/tracking">
-                <Button variant="outline">Track Order</Button>
-              </Link>
-              <Link to="/register">
-                <Button variant="primary">Create Customer Account</Button>
-              </Link>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-xs text-[#64748B] lg:col-span-5">
+              <p className="font-display text-sm font-bold text-[#10243A]">
+                Official Business Channels
+              </p>
+              <div className="space-y-2.5">
+                <p className="flex items-start gap-2.5">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#2563EB]" />
+                  <span>{DGT_BRAND.placeholders.nigeriaOfficeAddress}</span>
+                </p>
+                <p className="flex items-start gap-2.5">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#2563EB]" />
+                  <span>{DGT_BRAND.placeholders.katsinaHubAddress}</span>
+                </p>
+                <p className="flex items-center gap-2.5">
+                  <Phone className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                  <span>{DGT_BRAND.placeholders.businessPhone}</span>
+                </p>
+                <p className="flex items-center gap-2.5">
+                  <Mail className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                  <span>{DGT_BRAND.placeholders.supportEmail}</span>
+                </p>
+              </div>
             </div>
           </div>
         </div>

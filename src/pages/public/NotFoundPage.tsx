@@ -1,23 +1,36 @@
 import { Link } from 'react-router-dom';
+import { ArrowLeft, Compass } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 
 export function NotFoundPage() {
   return (
-    <div className="mx-auto max-w-2xl px-4 py-24 text-center sm:px-6 lg:px-8">
-      <p className="font-mono text-sm font-semibold text-[#8E6B0C]">HTTP 404</p>
-      <h1 className="mt-2 font-display text-3xl font-bold text-[#0B1E3D]">
-        Page Not Found
-      </h1>
-      <p className="mt-3 text-sm text-slate-600">
-        The requested route does not exist on the Danmusa Global Trade (DGT) platform.
-      </p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link to="/">
-          <Button variant="primary">Return Home</Button>
-        </Link>
-        <Link to="/catalogue">
-          <Button variant="outline">Browse Catalogue</Button>
-        </Link>
+    <div className="flex min-h-[65vh] items-center justify-center bg-[#F5F7FA] px-4 py-16">
+      <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+          <Compass className="h-6 w-6" />
+        </div>
+        <p className="mt-4 font-mono text-xs font-bold uppercase tracking-wider text-[#2563EB]">
+          Error 404
+        </p>
+        <h1 className="mt-2 font-display text-2xl font-extrabold text-[#10243A]">
+          Page not found
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-[#64748B]">
+          The page you are looking for may have moved or does not exist. Return to the Danmusa Global Trade storefront or browse our product catalogue.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link to="/">
+            <Button variant="primary" size="md">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Home
+            </Button>
+          </Link>
+          <Link to="/catalogue">
+            <Button variant="outline" size="md">
+              Browse Products
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

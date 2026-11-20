@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import type { CartItem, CurrencyCode, DemoProduct } from '../types/domain';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { CartItem, CurrencyCode, StorefrontProduct } from '../types/domain';
 
 interface CartContextValue {
   items: CartItem[];
@@ -10,30 +10,62 @@ interface CartContextValue {
   isDrawerOpen: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
-  addItem: (product: DemoProduct, quantity?: number) => void;
+  addItem: (product: StorefrontProduct, quantity?: number) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeItem: (productId: string) => void;
   clearCart: () => void;
 }
 
+const STORAGE_KEY = 'dgt_shopping_cart_v1';
+
 const CartContext = createContext<CartContextValue | null>(null);
 
+function loadInitialCart(): CartItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CartItem[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item) =>
+        item &&
+        item.product &&
+        typeof item.product.id === 'string' &&
+        typeof item.product.priceNgn === 'number' &&
+        typeof item.quantity === 'number' &&
+        item.quantity > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>(loadInitialCart);
   const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>('NGN');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  const addItem = (product: DemoProduct, quantity = 1) => {
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // Ignore storage quota errors in private contexts
+    }
+  }, [items]);
+
+  const addItem = (product: StorefrontProduct, quantity = 1) => {
+    const qty = Math.max(1, quantity);
     setItems((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
         return prev.map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + quantity }
+            ? { ...item, quantity: item.quantity + qty }
             : item,
         );
       }
-      return [...prev, { product, quantity }];
+      return [...prev, { product, quantity: qty }];
     });
     setIsDrawerOpen(true);
   };
@@ -58,7 +90,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const totalCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotalNgn = items.reduce(
-    (sum, item) => sum + item.product.demoPriceNgn * item.quantity,
+    (sum, item) => sum + item.product.priceNgn * item.quantity,
     0,
   );
 

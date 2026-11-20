@@ -1,44 +1,52 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-export type ButtonVariant = 'primary' | 'accent' | 'outline' | 'ghost';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonVariant = 'primary' | 'navy' | 'accent' | 'outline' | 'ghost' | 'danger';
+type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  fullWidth?: boolean;
   children: ReactNode;
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    'bg-[#0B1E3D] text-white hover:bg-[#15315E] border border-[#0B1E3D] focus-visible:ring-2 focus-visible:ring-[#0B1E3D] focus-visible:ring-offset-2',
+    'bg-[#2563EB] text-white hover:bg-[#1D4ED8] focus-visible:ring-[#2563EB] shadow-xs',
+  navy:
+    'bg-[#10243A] text-white hover:bg-[#1A3554] focus-visible:ring-[#10243A] shadow-xs',
   accent:
-    'bg-[#C59B27] text-[#0B1E3D] font-semibold hover:bg-[#B4891A] border border-[#C59B27] focus-visible:ring-2 focus-visible:ring-[#C59B27] focus-visible:ring-offset-2',
+    'bg-[#F4A62A] text-[#10243A] hover:bg-[#E0951D] focus-visible:ring-[#F4A62A] font-semibold shadow-xs',
   outline:
-    'bg-white text-[#0B1E3D] border border-slate-300 hover:bg-slate-50 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-[#0B1E3D] focus-visible:ring-offset-2',
+    'border border-slate-300 bg-white text-[#202B38] hover:border-[#10243A] hover:bg-[#F5F7FA] focus-visible:ring-[#2563EB]',
   ghost:
-    'bg-transparent text-slate-700 border border-transparent hover:bg-slate-100 hover:text-[#0B1E3D] focus-visible:ring-2 focus-visible:ring-[#0B1E3D] focus-visible:ring-offset-2',
+    'bg-transparent text-[#202B38] hover:bg-slate-100 focus-visible:ring-[#2563EB]',
+  danger:
+    'bg-[#DC2626] text-white hover:bg-[#B91C1C] focus-visible:ring-[#DC2626] shadow-xs',
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'min-h-[40px] px-4 py-2 text-xs',
-  md: 'min-h-[40px] px-5 py-2.5 text-sm',
-  lg: 'min-h-[44px] px-6 py-3 text-sm',
+  sm: 'h-9 px-3.5 text-xs font-medium rounded-lg gap-1.5',
+  md: 'h-10 px-4 text-sm font-semibold rounded-lg gap-2',
+  lg: 'h-12 px-6 text-sm font-semibold rounded-lg gap-2',
 };
 
 export function Button({
   variant = 'primary',
   size = 'md',
+  fullWidth = false,
   className = '',
   type = 'button',
   children,
-  ...props
+  ...rest
 }: ButtonProps) {
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-md font-medium whitespace-nowrap shrink-0 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
-      {...props}
+      className={`inline-flex items-center justify-center whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer ${
+        VARIANT_CLASSES[variant]
+      } ${SIZE_CLASSES[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      {...rest}
     >
       {children}
     </button>

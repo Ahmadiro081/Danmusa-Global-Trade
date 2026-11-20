@@ -27,10 +27,30 @@ export const STAFF_ROLE_SLUGS: readonly DgtRoleSlug[] = [
   'customer_support',
 ] as const;
 
+export interface VerifiedUserProfile {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  phone: string | null;
+  accountType: string;
+  defaultStateId: string | null;
+}
+
+export interface VerifiedStaffAccount {
+  id: string;
+  department: string | null;
+  isActive: boolean;
+  roleSlug: DgtRoleSlug | null;
+  roleName: string | null;
+}
+
 export interface VerifiedAuthContext {
   user: Pick<User, 'id' | 'email'>;
   role: DgtRoleSlug;
   staffAccountId: string | null;
+  profile?: VerifiedUserProfile;
+  staffAccount?: VerifiedStaffAccount | null;
+  isInactiveStaff?: boolean;
 }
 
 export interface AuthResolver {
@@ -95,12 +115,15 @@ export function createSupabaseAuthResolver(
 
       const { data: profileRow, error: profileError } = await supabaseAdmin
         .from('user_profiles')
-        .select('id, account_type')
+        .select('id, full_name, email, phone, account_type, default_state_id')
         .eq('id', userData.user.id)
         .maybeSingle();
 
       if (profileError) {
-        const classified = classifySupabaseError(profileError, 'Authorization profile check failed');
+        const classified = classifySupabaseError(
+          profileError,
+          'Authorization profile check failed',
+        );
         return {
           ok: false,
           status: classified.status,
@@ -111,12 +134,15 @@ export function createSupabaseAuthResolver(
 
       const { data: staffRow, error: staffError } = await supabaseAdmin
         .from('staff_accounts')
-        .select('id, is_active, roles(slug)')
+        .select('id, department, is_active, roles(slug, name)')
         .eq('user_id', userData.user.id)
         .maybeSingle();
 
       if (staffError) {
-        const classified = classifySupabaseError(staffError, 'Authorization check failed');
+        const classified = classifySupabaseError(
+          staffError,
+          'Authorization check failed',
+        );
         return {
           ok: false,
           status: classified.status,
@@ -125,7 +151,10 @@ export function createSupabaseAuthResolver(
         };
       }
 
-      const roleRelation = staffRow?.roles as unknown as { slug?: DgtRoleSlug } | null;
+      const roleRelation = staffRow?.roles as unknown as {
+        slug?: DgtRoleSlug;
+        name?: string;
+      } | null;
 
       // Active staff requires BOTH staff_accounts.is_active === true AND profile.account_type === 'staff'.
       const isVerifiedActiveStaff =
@@ -134,9 +163,38 @@ export function createSupabaseAuthResolver(
         Boolean(roleRelation?.slug) &&
         STAFF_ROLE_SLUGS.includes(roleRelation!.slug!);
 
+      const isInactiveStaff =
+        profileRow?.account_type === 'staff' && !isVerifiedActiveStaff;
+
       const resolvedRole: DgtRoleSlug = isVerifiedActiveStaff
         ? roleRelation!.slug!
         : 'registered_customer';
+
+      const profile: VerifiedUserProfile = {
+        id: userData.user.id,
+        fullName:
+          (profileRow as { full_name?: string | null } | null)?.full_name ?? null,
+        email:
+          (profileRow as { email?: string | null } | null)?.email ??
+          userData.user.email ??
+          null,
+        phone: (profileRow as { phone?: string | null } | null)?.phone ?? null,
+        accountType: profileRow?.account_type ?? 'registered_customer',
+        defaultStateId:
+          (profileRow as { default_state_id?: string | null } | null)
+            ?.default_state_id ?? null,
+      };
+
+      const staffAccount: VerifiedStaffAccount | null = staffRow
+        ? {
+            id: staffRow.id,
+            department:
+              (staffRow as { department?: string | null }).department ?? null,
+            isActive: Boolean(staffRow.is_active),
+            roleSlug: roleRelation?.slug ?? null,
+            roleName: roleRelation?.name ?? null,
+          }
+        : null;
 
       return {
         ok: true,
@@ -144,6 +202,9 @@ export function createSupabaseAuthResolver(
           user: { id: userData.user.id, email: userData.user.email },
           role: resolvedRole,
           staffAccountId: isVerifiedActiveStaff ? (staffRow?.id ?? null) : null,
+          profile,
+          staffAccount,
+          isInactiveStaff,
         },
       };
     },
@@ -156,12 +217,15 @@ export const defaultAuthResolver: AuthResolver = createSupabaseAuthResolver(() =
 });
 
 export function applySecurityHeaders(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  if (req.path.startsWith('/api')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Cache-Control', 'no-store');
+  }
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();

@@ -1,11 +1,11 @@
 import { Outlet } from 'react-router-dom';
-import { CartDrawer } from './CartDrawer';
-import { Footer } from './Footer';
 import { Navbar } from './Navbar';
+import { Footer } from './Footer';
+import { CartDrawer } from './CartDrawer';
 
 export function PublicLayout() {
   return (
-    <div className="min-h-screen flex flex-col bg-white text-[#0B1E3D]">
+    <div className="flex min-h-screen flex-col bg-[#F5F7FA] text-[#202B38]">
       <Navbar />
       <main className="flex-1">
         <Outlet />
